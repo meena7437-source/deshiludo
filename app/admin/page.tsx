@@ -5,7 +5,7 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
 
-const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
+const ADMIN_PASSWORD = "772527";
 
 export default function AdminDashboardPage() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -24,15 +24,7 @@ export default function AdminDashboardPage() {
   });
 
   useEffect(() => {
-    const saved = localStorage.getItem("deshiludo_admin");
-    if (saved === "yes") {
-      setIsAdmin(true);
-    }
-  }, []);
-
-  useEffect(() => {
     if (!isAdmin) return;
-
     loadStats();
 
     const channel = supabase
@@ -49,52 +41,19 @@ export default function AdminDashboardPage() {
 
   function loginAdmin() {
     if (password !== ADMIN_PASSWORD) {
-      toast.error("Wrong admin password");
+      toast.error("Wrong password");
       return;
     }
-
-    localStorage.setItem("deshiludo_admin", "yes");
     setIsAdmin(true);
     toast.success("Admin login successful");
   }
 
-  function logoutAdmin() {
-    localStorage.removeItem("deshiludo_admin");
-    setIsAdmin(false);
-    setPassword("");
-  }
-
   async function loadStats() {
-    const { data: wallets, error: walletError } = await supabase
-      .from("wallets")
-      .select("balance");
-
-    const { data: users, error: usersError } = await supabase
-      .from("users")
-      .select("id");
-
-    const { data: battles, error: battlesError } = await supabase
-      .from("battles")
-      .select("status");
-
-    const { data: deposits, error: depositsError } = await supabase
-      .from("deposits")
-      .select("amount,status");
-
-    const { data: withdraws, error: withdrawsError } = await supabase
-      .from("withdraws")
-      .select("amount,status");
-
-    if (
-      walletError ||
-      usersError ||
-      battlesError ||
-      depositsError ||
-      withdrawsError
-    ) {
-      toast.error("Stats load failed");
-      return;
-    }
+    const { data: wallets } = await supabase.from("wallets").select("balance");
+    const { data: users } = await supabase.from("users").select("id");
+    const { data: battles } = await supabase.from("battles").select("status");
+    const { data: deposits } = await supabase.from("deposits").select("amount,status");
+    const { data: withdraws } = await supabase.from("withdraws").select("amount,status");
 
     const totalWallet =
       wallets?.reduce((sum, w: any) => sum + Number(w.balance || 0), 0) || 0;
@@ -114,14 +73,11 @@ export default function AdminDashboardPage() {
       totalWallet,
       totalBattles: battles?.length || 0,
       openBattles: battles?.filter((b: any) => b.status === "open").length || 0,
-      completedBattles:
-        battles?.filter((b: any) => b.status === "completed").length || 0,
+      completedBattles: battles?.filter((b: any) => b.status === "completed").length || 0,
       totalDeposits,
       totalWithdraws,
-      pendingDeposits:
-        deposits?.filter((d: any) => d.status === "pending").length || 0,
-      pendingWithdraws:
-        withdraws?.filter((w: any) => w.status === "pending").length || 0,
+      pendingDeposits: deposits?.filter((d: any) => d.status === "pending").length || 0,
+      pendingWithdraws: withdraws?.filter((w: any) => w.status === "pending").length || 0,
     });
   }
 
@@ -141,12 +97,8 @@ export default function AdminDashboardPage() {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center p-5">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm">
-          <h1 className="text-3xl font-bold text-yellow-400 mb-2">
-            Admin Login
-          </h1>
-          <p className="text-zinc-400 mb-5">
-            Admin dashboard खोलने के लिए password डालो.
-          </p>
+          <h1 className="text-3xl font-bold text-yellow-400 mb-2">Admin Login</h1>
+          <p className="text-zinc-400 mb-5">Password डालो.</p>
 
           <input
             type="password"
@@ -161,7 +113,7 @@ export default function AdminDashboardPage() {
 
           <button
             onClick={loginAdmin}
-            className="w-full bg-yellow-400 text-black py-3 rounded-xl font-bold active:scale-95 transition"
+            className="w-full bg-yellow-400 text-black py-3 rounded-xl font-bold"
           >
             Login
           </button>
@@ -173,43 +125,30 @@ export default function AdminDashboardPage() {
   return (
     <main className="min-h-screen bg-black text-white p-4 sm:p-5">
       <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+        <div className="flex justify-between gap-3 mb-6">
           <div>
-            <h1 className="text-3xl font-bold text-yellow-400">
-              Admin Dashboard
-            </h1>
-            <p className="text-zinc-400 text-sm mt-1">
-              DeshiLudo ka full control panel.
-            </p>
+            <h1 className="text-3xl font-bold text-yellow-400">Admin Dashboard</h1>
+            <p className="text-zinc-400 text-sm mt-1">DeshiLudo ka full control panel.</p>
           </div>
 
-          <div className="flex gap-3">
-            <button
-              onClick={loadStats}
-              className="bg-yellow-400 text-black px-5 py-2 rounded-xl font-bold active:scale-95 transition"
-            >
-              Refresh
-            </button>
-
-            <button
-              onClick={logoutAdmin}
-              className="bg-red-500 text-white px-5 py-2 rounded-xl font-bold active:scale-95 transition"
-            >
-              Logout
-            </button>
-          </div>
+          <button
+            onClick={() => setIsAdmin(false)}
+            className="bg-red-500 text-white px-5 py-2 rounded-xl font-bold"
+          >
+            Logout
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <Link href="/admin/battles" className="bg-blue-500 hover:bg-blue-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition">
+          <Link href="/admin/battles" className="bg-blue-500 text-white rounded-2xl p-5 font-bold text-center">
             Manage Battles
           </Link>
 
-          <Link href="/admin/deposits" className="bg-green-500 hover:bg-green-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition">
+          <Link href="/admin/deposits" className="bg-green-500 text-white rounded-2xl p-5 font-bold text-center">
             Manage Deposits
           </Link>
 
-          <Link href="/admin/withdraws" className="bg-red-500 hover:bg-red-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition">
+          <Link href="/admin/withdraws" className="bg-red-500 text-white rounded-2xl p-5 font-bold text-center">
             Manage Withdraws
           </Link>
         </div>
