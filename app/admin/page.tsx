@@ -5,7 +5,12 @@ import Link from "next/link";
 import toast from "react-hot-toast";
 import { supabase } from "../../lib/supabase";
 
+const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
+
 export default function AdminDashboardPage() {
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [password, setPassword] = useState("");
+
   const [stats, setStats] = useState({
     totalUsers: 0,
     totalWallet: 0,
@@ -19,6 +24,15 @@ export default function AdminDashboardPage() {
   });
 
   useEffect(() => {
+    const saved = localStorage.getItem("deshiludo_admin");
+    if (saved === "yes") {
+      setIsAdmin(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
     loadStats();
 
     const channel = supabase
@@ -31,7 +45,24 @@ export default function AdminDashboardPage() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [isAdmin]);
+
+  function loginAdmin() {
+    if (password !== ADMIN_PASSWORD) {
+      toast.error("Wrong admin password");
+      return;
+    }
+
+    localStorage.setItem("deshiludo_admin", "yes");
+    setIsAdmin(true);
+    toast.success("Admin login successful");
+  }
+
+  function logoutAdmin() {
+    localStorage.removeItem("deshiludo_admin");
+    setIsAdmin(false);
+    setPassword("");
+  }
 
   async function loadStats() {
     const { data: wallets, error: walletError } = await supabase
@@ -106,6 +137,39 @@ export default function AdminDashboardPage() {
     ["⏳ Pending Withdraws", stats.pendingWithdraws],
   ];
 
+  if (!isAdmin) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-5">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm">
+          <h1 className="text-3xl font-bold text-yellow-400 mb-2">
+            Admin Login
+          </h1>
+          <p className="text-zinc-400 mb-5">
+            Admin dashboard खोलने के लिए password डालो.
+          </p>
+
+          <input
+            type="password"
+            placeholder="Enter admin password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") loginAdmin();
+            }}
+            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 outline-none mb-4"
+          />
+
+          <button
+            onClick={loginAdmin}
+            className="w-full bg-yellow-400 text-black py-3 rounded-xl font-bold active:scale-95 transition"
+          >
+            Login
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-black text-white p-4 sm:p-5">
       <div className="max-w-6xl mx-auto">
@@ -119,43 +183,40 @@ export default function AdminDashboardPage() {
             </p>
           </div>
 
-          <button
-            onClick={loadStats}
-            className="bg-yellow-400 text-black px-5 py-2 rounded-xl font-bold active:scale-95 transition"
-          >
-            Refresh Stats
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={loadStats}
+              className="bg-yellow-400 text-black px-5 py-2 rounded-xl font-bold active:scale-95 transition"
+            >
+              Refresh
+            </button>
+
+            <button
+              onClick={logoutAdmin}
+              className="bg-red-500 text-white px-5 py-2 rounded-xl font-bold active:scale-95 transition"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <Link
-            href="/admin/battles"
-            className="bg-blue-500 hover:bg-blue-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition"
-          >
+          <Link href="/admin/battles" className="bg-blue-500 hover:bg-blue-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition">
             Manage Battles
           </Link>
 
-          <Link
-            href="/admin/deposits"
-            className="bg-green-500 hover:bg-green-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition"
-          >
+          <Link href="/admin/deposits" className="bg-green-500 hover:bg-green-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition">
             Manage Deposits
           </Link>
 
-          <Link
-            href="/admin/withdraws"
-            className="bg-red-500 hover:bg-red-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition"
-          >
+          <Link href="/admin/withdraws" className="bg-red-500 hover:bg-red-600 text-white rounded-2xl p-5 font-bold text-center active:scale-95 transition">
             Manage Withdraws
           </Link>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           {cards.map((card, index) => (
-            <div
-              key={index}
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5"
-            >
+            <div key={index} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
               <p className="text-zinc-400 text-sm">{card[0]}</p>
               <h2 className="text-3xl font-bold mt-2">{card[1]}</h2>
             </div>
