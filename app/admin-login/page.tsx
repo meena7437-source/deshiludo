@@ -35,8 +35,12 @@ export default function AdminLoginPage() {
       return;
     }
 
+    localStorage.setItem("deshiludo_admin", "yes");
+    localStorage.setItem("deshiludo_admin_role", "admin");
+
     toast.success("Admin login successful");
-    router.push("/admin");
+
+    router.replace("/admin");
     router.refresh();
   }
 
