@@ -1,41 +1,46 @@
 import { NextResponse } from "next/server";
 
-export async function POST(request: Request) {
-  const { username, password } = await request.json();
+const ADMIN_USERNAME = "admin";
+const ADMIN_PASSWORD = "admin123";
 
-  const cleanUsername = String(username || "").trim();
-  const cleanPassword = String(password || "").trim();
+export async function POST(req: Request) {
+  try {
+    const { username, password } = await req.json();
 
-  if (cleanUsername !== "admin" || cleanPassword !== "admin123") {
+    if (
+      username !== ADMIN_USERNAME ||
+      password !== ADMIN_PASSWORD
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid username or password",
+        },
+        { status: 401 }
+      );
+    }
+
+    const res = NextResponse.json({
+      success: true,
+      message: "Login successful",
+    });
+
+    res.cookies.set("deshiludo_admin", "yes", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24, // 24 hours
+    });
+
+    return res;
+  } catch {
     return NextResponse.json(
       {
         success: false,
-        message: `DEBUG: username=${cleanUsername}, password=${cleanPassword}`,
+        message: "Something went wrong",
       },
-      { status: 401 }
+      { status: 500 }
     );
   }
-
-  const response = NextResponse.json({
-    success: true,
-    message: "Admin login successful",
-  });
-
-  response.cookies.set("deshiludo_admin", "yes", {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
-
-  response.cookies.set("deshiludo_admin_role", "admin", {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24,
-  });
-
-  return response;
 }
