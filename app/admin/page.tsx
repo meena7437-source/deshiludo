@@ -2,14 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import toast from "react-hot-toast";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 
-const ADMIN_PASSWORD = "772527";
-
 export default function AdminDashboardPage() {
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [password, setPassword] = useState("");
+  const router = useRouter();
 
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -24,143 +21,207 @@ export default function AdminDashboardPage() {
   });
 
   useEffect(() => {
-    if (!isAdmin) return;
     loadStats();
 
     const channel = supabase
       .channel("admin-dashboard-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "battles" }, loadStats)
-      .on("postgres_changes", { event: "*", schema: "public", table: "deposits" }, loadStats)
-      .on("postgres_changes", { event: "*", schema: "public", table: "withdraws" }, loadStats)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "battles" },
+        loadStats
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "deposits" },
+        loadStats
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "withdraws" },
+        loadStats
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAdmin]);
-
-  function loginAdmin() {
-    if (password !== ADMIN_PASSWORD) {
-      toast.error("Wrong password");
-      return;
-    }
-    setIsAdmin(true);
-    toast.success("Admin login successful");
-  }
+  }, []);
 
   async function loadStats() {
     const { data: wallets } = await supabase.from("wallets").select("balance");
     const { data: users } = await supabase.from("users").select("id");
     const { data: battles } = await supabase.from("battles").select("status");
-    const { data: deposits } = await supabase.from("deposits").select("amount,status");
-    const { data: withdraws } = await supabase.from("withdraws").select("amount,status");
-
-    const totalWallet =
-      wallets?.reduce((sum, w: any) => sum + Number(w.balance || 0), 0) || 0;
-
-    const totalDeposits =
-      deposits
-        ?.filter((d: any) => d.status === "approved")
-        .reduce((sum, d: any) => sum + Number(d.amount || 0), 0) || 0;
-
-    const totalWithdraws =
-      withdraws
-        ?.filter((w: any) => w.status === "approved")
-        .reduce((sum, w: any) => sum + Number(w.amount || 0), 0) || 0;
+    const { data: deposits } = await supabase
+      .from("deposits")
+      .select("amount,status");
+    const { data: withdraws } = await supabase
+      .from("withdraws")
+      .select("amount,status");
 
     setStats({
       totalUsers: users?.length || 0,
-      totalWallet,
+      totalWallet:
+        wallets?.reduce((sum, w: any) => sum + Number(w.balance || 0), 0) || 0,
       totalBattles: battles?.length || 0,
       openBattles: battles?.filter((b: any) => b.status === "open").length || 0,
-      completedBattles: battles?.filter((b: any) => b.status === "completed").length || 0,
-      totalDeposits,
-      totalWithdraws,
-      pendingDeposits: deposits?.filter((d: any) => d.status === "pending").length || 0,
-      pendingWithdraws: withdraws?.filter((w: any) => w.status === "pending").length || 0,
+      completedBattles:
+        battles?.filter((b: any) => b.status === "completed").length || 0,
+      totalDeposits:
+        deposits
+          ?.filter((d: any) => d.status === "approved")
+          .reduce((sum, d: any) => sum + Number(d.amount || 0), 0) || 0,
+      totalWithdraws:
+        withdraws
+          ?.filter((w: any) => w.status === "approved")
+          .reduce((sum, w: any) => sum + Number(w.amount || 0), 0) || 0,
+      pendingDeposits:
+        deposits?.filter((d: any) => d.status === "pending").length || 0,
+      pendingWithdraws:
+        withdraws?.filter((w: any) => w.status === "pending").length || 0,
     });
   }
 
-  const cards = [
-    ["👥 Total Users", stats.totalUsers],
-    ["💰 Total Wallet Balance", `₹${stats.totalWallet}`],
-    ["🎮 Total Battles", stats.totalBattles],
-    ["🟢 Open Battles", stats.openBattles],
-    ["✅ Completed Battles", stats.completedBattles],
-    ["💳 Approved Deposits", `₹${stats.totalDeposits}`],
-    ["🏧 Approved Withdraws", `₹${stats.totalWithdraws}`],
-    ["⏳ Pending Deposits", stats.pendingDeposits],
-    ["⏳ Pending Withdraws", stats.pendingWithdraws],
-  ];
-
-  if (!isAdmin) {
-    return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center p-5">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm">
-          <h1 className="text-3xl font-bold text-yellow-400 mb-2">Admin Login</h1>
-          <p className="text-zinc-400 mb-5">Password डालो.</p>
-
-          <input
-            type="password"
-            placeholder="Enter admin password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") loginAdmin();
-            }}
-            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 outline-none mb-4"
-          />
-
-          <button
-            onClick={loginAdmin}
-            className="w-full bg-yellow-400 text-black py-3 rounded-xl font-bold"
-          >
-            Login
-          </button>
-        </div>
-      </main>
-    );
+  function logout() {
+    document.cookie = "deshiludo_admin=; path=/; max-age=0";
+    document.cookie = "deshiludo_admin_role=; path=/; max-age=0";
+    router.push("/admin-login");
   }
 
+  const mainActions = [
+    {
+      title: "Manage Battles",
+      desc: "Running, open aur completed battles",
+      href: "/admin/battles",
+      color: "border-blue-500/30 bg-blue-500/10 text-blue-300",
+    },
+    {
+      title: "Manage Deposits",
+      desc: `${stats.pendingDeposits} pending requests`,
+      href: "/admin/deposits",
+      color: "border-green-500/30 bg-green-500/10 text-green-300",
+    },
+    {
+      title: "Manage Withdraws",
+      desc: `${stats.pendingWithdraws} pending requests`,
+      href: "/admin/withdraws",
+      color: "border-red-500/30 bg-red-500/10 text-red-300",
+    },
+  ];
+
+  const cards = [
+    ["👥", "Total Users", stats.totalUsers, "text-blue-300"],
+    ["💰", "Wallet Balance", `₹${stats.totalWallet}`, "text-green-300"],
+    ["🎮", "Total Battles", stats.totalBattles, "text-yellow-300"],
+    ["🟢", "Open Battles", stats.openBattles, "text-blue-300"],
+    ["✅", "Completed", stats.completedBattles, "text-green-300"],
+    ["💳", "Deposits", `₹${stats.totalDeposits}`, "text-green-300"],
+    ["🏧", "Withdraws", `₹${stats.totalWithdraws}`, "text-red-300"],
+    ["⏳", "Pending Deposits", stats.pendingDeposits, "text-yellow-300"],
+    ["⚠️", "Pending Withdraws", stats.pendingWithdraws, "text-red-300"],
+  ];
+
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-5">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between gap-3 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold text-yellow-400">Admin Dashboard</h1>
-            <p className="text-zinc-400 text-sm mt-1">DeshiLudo ka full control panel.</p>
+    <main className="min-h-screen bg-[#07070b] text-white">
+      <div className="mx-auto max-w-6xl px-4 py-5">
+        <section className="mb-6 rounded-[28px] border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-400">
+                DeshiLudo Admin
+              </p>
+
+              <h1 className="mt-2 text-3xl font-black text-white">
+                Control Panel
+              </h1>
+
+              <p className="mt-1 text-sm text-zinc-500">
+                Live stats, payments aur battles management.
+              </p>
+            </div>
+
+            <button
+              onClick={logout}
+              className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-300"
+            >
+              Logout
+            </button>
           </div>
 
-          <button
-            onClick={() => setIsAdmin(false)}
-            className="bg-red-500 text-white px-5 py-2 rounded-xl font-bold"
-          >
-            Logout
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <Link href="/admin/battles" className="bg-blue-500 text-white rounded-2xl p-5 font-bold text-center">
-            Manage Battles
-          </Link>
-
-          <Link href="/admin/deposits" className="bg-green-500 text-white rounded-2xl p-5 font-bold text-center">
-            Manage Deposits
-          </Link>
-
-          <Link href="/admin/withdraws" className="bg-red-500 text-white rounded-2xl p-5 font-bold text-center">
-            Manage Withdraws
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-          {cards.map((card, index) => (
-            <div key={index} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-              <p className="text-zinc-400 text-sm">{card[0]}</p>
-              <h2 className="text-3xl font-bold mt-2">{card[1]}</h2>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
+              <p className="text-xs text-green-300">Approved Deposits</p>
+              <p className="mt-1 text-2xl font-black text-green-400">
+                ₹{stats.totalDeposits}
+              </p>
             </div>
+
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
+              <p className="text-xs text-red-300">Approved Withdraws</p>
+              <p className="mt-1 text-2xl font-black text-red-400">
+                ₹{stats.totalWithdraws}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {mainActions.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`rounded-[24px] border p-5 shadow-xl shadow-black/30 ${item.color}`}
+            >
+              <p className="text-xl font-black">{item.title}</p>
+              <p className="mt-2 text-sm opacity-80">{item.desc}</p>
+              <p className="mt-4 text-sm font-black">Open →</p>
+            </Link>
           ))}
-        </div>
+        </section>
+
+        {(stats.pendingDeposits > 0 || stats.pendingWithdraws > 0) && (
+          <section className="mb-6 rounded-[24px] border border-yellow-400/30 bg-yellow-400/10 p-4">
+            <p className="font-black text-yellow-300">Pending Alert ⚠️</p>
+            <p className="mt-1 text-sm text-zinc-300">
+              {stats.pendingDeposits} deposit aur {stats.pendingWithdraws} withdraw
+              request approval ke liye pending hai.
+            </p>
+          </section>
+        )}
+
+        <section>
+          <div className="mb-4 flex items-end justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
+                Realtime
+              </p>
+              <h2 className="mt-1 text-2xl font-black">Live Stats</h2>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+            {cards.map((card, index) => (
+              <div
+                key={index}
+                className="rounded-[24px] border border-zinc-800 bg-zinc-950 p-5 shadow-xl shadow-black/30"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-2xl">{card[0]}</p>
+                  <span className="rounded-full border border-zinc-800 bg-black px-3 py-1 text-xs font-bold text-zinc-500">
+                    Live
+                  </span>
+                </div>
+
+                <p className="mt-4 text-sm font-bold text-zinc-500">
+                  {card[1]}
+                </p>
+
+                <h2 className={`mt-2 text-3xl font-black ${card[3]}`}>
+                  {card[2]}
+                </h2>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );

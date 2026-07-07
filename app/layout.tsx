@@ -1,5 +1,17 @@
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
+import type { Metadata, Viewport } from "next";
+import PWARegister from "./PWARegister";
+
+export const metadata: Metadata = {
+  title: "DeshiLudo",
+  description: "Play Ludo Battles and Win Real Cash",
+  manifest: "/manifest.json",
+};
+
+export const viewport: Viewport = {
+  themeColor: "#facc15",
+};
 
 export default function RootLayout({
   children,
@@ -9,6 +21,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <PWARegister />
+
         {children}
 
         <Toaster

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
 import { supabase } from "../../../lib/supabase";
@@ -47,126 +47,209 @@ export default function AdminBattlesPage() {
     setBattles(data || []);
   }
 
+  const stats = useMemo(() => {
+    return {
+      all: battles.length,
+      open: battles.filter((b) => b.status === "open").length,
+      running: battles.filter((b) => b.status === "running").length,
+      completed: battles.filter((b) => b.status === "completed").length,
+      cancelled: battles.filter((b) => b.status === "cancelled").length,
+    };
+  }, [battles]);
+
   const filteredBattles =
     filter === "all"
       ? battles
       : battles.filter((battle) => battle.status === filter);
 
   function statusClass(status: string) {
-    if (status === "open") return "bg-green-500/20 text-green-400";
-    if (status === "running") return "bg-blue-500/20 text-blue-400";
-    if (status === "completed") return "bg-yellow-500/20 text-yellow-400";
-    if (status === "cancelled") return "bg-red-500/20 text-red-400";
-    return "bg-zinc-700 text-zinc-300";
+    if (status === "open")
+      return "border-green-500/30 bg-green-500/10 text-green-300";
+    if (status === "running")
+      return "border-blue-500/30 bg-blue-500/10 text-blue-300";
+    if (status === "completed")
+      return "border-yellow-400/30 bg-yellow-400/10 text-yellow-300";
+    if (status === "cancelled")
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+
+    return "border-zinc-700 bg-zinc-800 text-zinc-300";
   }
 
+  function formatDate(dateValue: string) {
+    if (!dateValue) return "No date";
+
+    return new Date(dateValue).toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  const filters = [
+    { key: "all", label: "All", count: stats.all },
+    { key: "open", label: "Open", count: stats.open },
+    { key: "running", label: "Running", count: stats.running },
+    { key: "completed", label: "Completed", count: stats.completed },
+    { key: "cancelled", label: "Cancel", count: stats.cancelled },
+  ];
+
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-5">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
-          <div>
-            <h1 className="text-3xl font-bold text-yellow-400">
-              Admin Battles
-            </h1>
-            <p className="text-zinc-400 text-sm mt-1">
-              Battles ko monitor aur manage karo.
-            </p>
+    <main className="min-h-screen bg-[#07070b] text-white">
+      <div className="mx-auto max-w-6xl px-4 py-5">
+        <section className="mb-6 rounded-[28px] border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-400">
+                Admin Control
+              </p>
+
+              <h1 className="mt-2 text-3xl font-black text-white">
+                Battle Management
+              </h1>
+
+              <p className="mt-1 text-sm text-zinc-500">
+                Battles ko live monitor aur manage karo.
+              </p>
+            </div>
+
+            <button
+              onClick={() => loadBattles()}
+              className="rounded-2xl bg-yellow-400 px-5 py-3 font-black text-black active:scale-95"
+            >
+              Refresh
+            </button>
           </div>
 
-          <button
-            onClick={() => loadBattles()}
-            className="bg-yellow-400 text-black font-bold px-5 py-2 rounded-xl active:scale-95 transition"
-          >
-            Refresh
-          </button>
-        </div>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
+              <p className="text-xs text-zinc-500">Total Battles</p>
+              <p className="mt-1 text-2xl font-black text-yellow-400">
+                {stats.all}
+              </p>
+            </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-          <button
-            onClick={() => setFilter("all")}
-            className={`rounded-xl p-3 font-bold ${
-              filter === "all" ? "bg-yellow-400 text-black" : "bg-zinc-900"
-            }`}
-          >
-            All
-          </button>
+            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
+              <p className="text-xs text-green-300">Open</p>
+              <p className="mt-1 text-2xl font-black text-green-400">
+                {stats.open}
+              </p>
+            </div>
 
-          <button
-            onClick={() => setFilter("open")}
-            className={`rounded-xl p-3 font-bold ${
-              filter === "open" ? "bg-green-500 text-white" : "bg-zinc-900"
-            }`}
-          >
-            Open
-          </button>
+            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+              <p className="text-xs text-blue-300">Running</p>
+              <p className="mt-1 text-2xl font-black text-blue-400">
+                {stats.running}
+              </p>
+            </div>
 
-          <button
-            onClick={() => setFilter("running")}
-            className={`rounded-xl p-3 font-bold ${
-              filter === "running" ? "bg-blue-500 text-white" : "bg-zinc-900"
-            }`}
-          >
-            Running
-          </button>
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
+              <p className="text-xs text-red-300">Cancelled</p>
+              <p className="mt-1 text-2xl font-black text-red-400">
+                {stats.cancelled}
+              </p>
+            </div>
+          </div>
+        </section>
 
-          <button
-            onClick={() => setFilter("completed")}
-            className={`rounded-xl p-3 font-bold ${
-              filter === "completed"
-                ? "bg-yellow-500 text-black"
-                : "bg-zinc-900"
-            }`}
-          >
-            Completed
-          </button>
+        <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+          {filters.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setFilter(item.key)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black ${
+                filter === item.key
+                  ? "border-yellow-400 bg-yellow-400 text-black"
+                  : "border-zinc-800 bg-zinc-950 text-zinc-400"
+              }`}
+            >
+              {item.label} ({item.count})
+            </button>
+          ))}
         </div>
 
         {loading ? (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center">
-            Loading battles...
+          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+            <p className="font-bold text-zinc-300">Loading battles...</p>
           </div>
         ) : filteredBattles.length === 0 ? (
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center text-zinc-400">
-            No battles found.
+          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
+            <p className="font-black text-zinc-300">No battles found.</p>
+            <p className="mt-1 text-sm text-zinc-500">
+              Is filter me koi battle nahi hai.
+            </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {filteredBattles.map((battle) => (
               <div
                 key={battle.id}
-                className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 sm:p-5"
+                className="rounded-[26px] border border-zinc-800 bg-zinc-950 p-4 shadow-xl shadow-black/30"
               >
-                <div className="flex flex-col sm:flex-row sm:justify-between gap-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <h2 className="text-xl font-bold text-yellow-400">
-                        Battle #{battle.id}
-                      </h2>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold text-zinc-500">
+                      Battle #{battle.id}
+                    </p>
 
-                      <span
-                        className={`text-xs font-bold px-3 py-1 rounded-full ${statusClass(
-                          battle.status
-                        )}`}
-                      >
-                        {battle.status}
-                      </span>
-                    </div>
+                    <h2 className="mt-1 text-3xl font-black text-yellow-400">
+                      ₹{battle.amount}
+                    </h2>
 
-                    <p className="text-lg font-bold">Amount: ₹{battle.amount}</p>
-
-                    <div className="text-sm text-zinc-400 space-y-1 break-all">
-                      <p>Creator: {battle.creator_uid}</p>
-                      <p>Joiner: {battle.joiner_uid || "Not joined"}</p>
-                    </div>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {formatDate(battle.created_at)}
+                    </p>
                   </div>
 
-                  <Link
-                    href={`/admin/battles/${battle.id}`}
-                    className="bg-blue-500 hover:bg-blue-600 text-white font-bold px-5 py-3 rounded-xl text-center active:scale-95 transition"
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${statusClass(
+                      battle.status
+                    )}`}
                   >
-                    Open
-                  </Link>
+                    {battle.status}
+                  </span>
                 </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-zinc-800 bg-black p-3">
+                    <p className="text-xs text-zinc-500">Creator</p>
+                    <p className="mt-1 break-all text-sm font-bold text-zinc-300">
+                      {battle.creator_uid}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-zinc-800 bg-black p-3">
+                    <p className="text-xs text-zinc-500">Joiner</p>
+                    <p className="mt-1 break-all text-sm font-bold text-zinc-300">
+                      {battle.joiner_uid || "Not joined"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-2xl border border-zinc-800 bg-black p-3">
+                  <div className="flex justify-between gap-3 text-sm">
+                    <span className="text-zinc-500">Room Code</span>
+                    <span className="font-black text-yellow-300">
+                      {battle.room_code || "Not added"}
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex justify-between gap-3 text-sm">
+                    <span className="text-zinc-500">Winner</span>
+                    <span className="break-all text-right font-bold text-zinc-300">
+                      {battle.winner_uid || "Not selected"}
+                    </span>
+                  </div>
+                </div>
+
+                <Link
+                  href={`/admin/battles/${battle.id}`}
+                  className="mt-4 block w-full rounded-2xl bg-blue-500 py-4 text-center font-black text-white active:scale-95"
+                >
+                  Open Battle
+                </Link>
               </div>
             ))}
           </div>

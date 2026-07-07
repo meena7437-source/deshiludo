@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { supabase } from "../../../lib/supabase";
@@ -50,15 +50,33 @@ export default function AdminDepositPage() {
     setDeposits(data || []);
   }
 
+  const stats = useMemo(() => {
+    return {
+      all: deposits.length,
+      pending: deposits.filter((d) => d.status === "pending").length,
+      approved: deposits.filter((d) => d.status === "approved").length,
+      rejected: deposits.filter((d) => d.status === "rejected").length,
+      approvedAmount: deposits
+        .filter((d) => d.status === "approved")
+        .reduce((sum, d) => sum + Number(d.amount || 0), 0),
+      pendingAmount: deposits
+        .filter((d) => d.status === "pending")
+        .reduce((sum, d) => sum + Number(d.amount || 0), 0),
+    };
+  }, [deposits]);
+
   const filteredDeposits =
     filter === "all"
       ? deposits
       : deposits.filter((deposit) => deposit.status === filter);
 
   function statusClass(status: string) {
-    if (status === "approved") return "bg-green-500/20 text-green-400";
-    if (status === "rejected") return "bg-red-500/20 text-red-400";
-    return "bg-yellow-500/20 text-yellow-400";
+    if (status === "approved")
+      return "border-green-500/30 bg-green-500/10 text-green-300";
+    if (status === "rejected")
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+
+    return "border-yellow-400/30 bg-yellow-400/10 text-yellow-300";
   }
 
   async function approveDeposit(deposit: any) {
@@ -131,122 +149,167 @@ export default function AdminDepositPage() {
     }
   }
 
+  const filters = [
+    { key: "all", label: "All", count: stats.all },
+    { key: "pending", label: "Pending", count: stats.pending },
+    { key: "approved", label: "Approved", count: stats.approved },
+    { key: "rejected", label: "Rejected", count: stats.rejected },
+  ];
+
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-5">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-zinc-900 rounded-2xl p-5 sm:p-6 border border-zinc-800">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+    <main className="min-h-screen bg-[#07070b] text-white">
+      <div className="mx-auto max-w-5xl px-4 py-5">
+        <section className="mb-6 rounded-[28px] border border-green-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-yellow-400">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-green-400">
+                Admin Payments
+              </p>
+
+              <h1 className="mt-2 text-3xl font-black text-white">
                 Deposit Requests
               </h1>
-              <p className="text-zinc-400 text-sm mt-1">
+
+              <p className="mt-1 text-sm text-zinc-500">
                 User deposits approve ya reject karo.
               </p>
             </div>
 
             <button
               onClick={() => loadDeposits()}
-              className="bg-yellow-400 text-black font-bold px-5 py-2 rounded-xl active:scale-95 transition"
+              className="rounded-2xl bg-yellow-400 px-5 py-3 font-black text-black active:scale-95"
             >
               Refresh
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            {["all", "pending", "approved"].map((item) => (
-              <button
-                key={item}
-                onClick={() => setFilter(item)}
-                className={`rounded-xl p-3 font-bold capitalize ${
-                  filter === item
-                    ? "bg-yellow-400 text-black"
-                    : "bg-zinc-800 text-white"
-                }`}
-              >
-                {item}
-              </button>
-            ))}
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
+              <p className="text-xs text-zinc-500">Total Requests</p>
+              <p className="mt-1 text-2xl font-black text-yellow-400">
+                {stats.all}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
+              <p className="text-xs text-yellow-300">Pending</p>
+              <p className="mt-1 text-2xl font-black text-yellow-400">
+                {stats.pending}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
+              <p className="text-xs text-green-300">Approved Amount</p>
+              <p className="mt-1 text-2xl font-black text-green-400">
+                ₹{stats.approvedAmount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+              <p className="text-xs text-blue-300">Pending Amount</p>
+              <p className="mt-1 text-2xl font-black text-blue-400">
+                ₹{stats.pendingAmount}
+              </p>
+            </div>
           </div>
+        </section>
 
-          {loading ? (
-            <div className="bg-zinc-800 rounded-xl p-6 text-center">
-              Loading deposits...
-            </div>
-          ) : filteredDeposits.length === 0 ? (
-            <div className="bg-zinc-800 rounded-xl p-6 text-center text-zinc-400">
+        <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+          {filters.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setFilter(item.key)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black ${
+                filter === item.key
+                  ? "border-yellow-400 bg-yellow-400 text-black"
+                  : "border-zinc-800 bg-zinc-950 text-zinc-400"
+              }`}
+            >
+              {item.label} ({item.count})
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+            <p className="font-bold text-zinc-300">Loading deposits...</p>
+          </div>
+        ) : filteredDeposits.length === 0 ? (
+          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
+            <p className="font-black text-zinc-300">
               Koi deposit request nahi hai.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredDeposits.map((deposit) => (
-                <div
-                  key={deposit.id}
-                  className="bg-zinc-800 rounded-xl p-4 border border-zinc-700"
-                >
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <p className="font-bold text-2xl text-white">
-                          ₹{deposit.amount}
-                        </p>
-
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-bold ${statusClass(
-                            deposit.status
-                          )}`}
-                        >
-                          {deposit.status}
-                        </span>
-                      </div>
-
-                      <p className="text-sm text-zinc-400 break-all">
-                        UID: {deposit.uid}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredDeposits.map((deposit) => (
+              <div
+                key={deposit.id}
+                className="rounded-[26px] border border-zinc-800 bg-zinc-950 p-4 shadow-xl shadow-black/30"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-3xl font-black text-green-400">
+                        ₹{deposit.amount}
                       </p>
 
-                      {deposit.screenshot && (
-                        <a
-                          href={deposit.screenshot}
-                          target="_blank"
-                          className="text-blue-400 text-sm inline-block font-bold"
-                        >
-                          View Screenshot
-                        </a>
-                      )}
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${statusClass(
+                          deposit.status
+                        )}`}
+                      >
+                        {deposit.status}
+                      </span>
                     </div>
 
-                    {deposit.status === "pending" && (
-                      <div className="grid grid-cols-2 sm:w-56 gap-3">
-                        <button
-                          onClick={() => approveDeposit(deposit)}
-                          disabled={actionId === deposit.id}
-                          className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl disabled:bg-zinc-700 active:scale-95 transition"
-                        >
-                          {actionId === deposit.id ? "..." : "Approve"}
-                        </button>
+                    <p className="mt-3 break-all text-sm text-zinc-400">
+                      UID: {deposit.uid}
+                    </p>
 
-                        <button
-                          onClick={() => rejectDeposit(deposit)}
-                          disabled={actionId === deposit.id}
-                          className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl disabled:bg-zinc-700 active:scale-95 transition"
-                        >
-                          {actionId === deposit.id ? "..." : "Reject"}
-                        </button>
-                      </div>
+                    {deposit.screenshot && (
+                      <a
+                        href={deposit.screenshot}
+                        target="_blank"
+                        className="mt-4 inline-block rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm font-black text-blue-300"
+                      >
+                        View Screenshot
+                      </a>
                     )}
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
 
-          <button
-            onClick={() => router.push("/admin")}
-            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl mt-6 active:scale-95 transition"
-          >
-            Back to Admin
-          </button>
-        </div>
+                  {deposit.status === "pending" && (
+                    <div className="grid grid-cols-2 gap-3 sm:w-64">
+                      <button
+                        onClick={() => approveDeposit(deposit)}
+                        disabled={actionId === deposit.id}
+                        className="rounded-2xl bg-green-500 py-4 font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
+                      >
+                        {actionId === deposit.id ? "..." : "Approve"}
+                      </button>
+
+                      <button
+                        onClick={() => rejectDeposit(deposit)}
+                        disabled={actionId === deposit.id}
+                        className="rounded-2xl bg-red-500 py-4 font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
+                      >
+                        {actionId === deposit.id ? "..." : "Reject"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => router.push("/admin")}
+          className="mt-6 w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-4 font-black text-zinc-300 active:scale-95"
+        >
+          Back to Admin
+        </button>
       </div>
     </main>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { supabase } from "../../../lib/supabase";
@@ -60,15 +60,45 @@ export default function AdminWithdrawsPage() {
     setWithdraws(data || []);
   }
 
+  const stats = useMemo(() => {
+    return {
+      all: withdraws.length,
+      pending: withdraws.filter((w) => w.status === "pending").length,
+      approved: withdraws.filter((w) => w.status === "approved").length,
+      rejected: withdraws.filter((w) => w.status === "rejected").length,
+      approvedAmount: withdraws
+        .filter((w) => w.status === "approved")
+        .reduce((sum, w) => sum + Number(w.amount || 0), 0),
+      pendingAmount: withdraws
+        .filter((w) => w.status === "pending")
+        .reduce((sum, w) => sum + Number(w.amount || 0), 0),
+    };
+  }, [withdraws]);
+
   const filteredWithdraws =
     filter === "all"
       ? withdraws
       : withdraws.filter((w) => w.status === filter);
 
   function statusClass(status: string) {
-    if (status === "approved") return "bg-green-500/20 text-green-400";
-    if (status === "rejected") return "bg-red-500/20 text-red-400";
-    return "bg-yellow-500/20 text-yellow-400";
+    if (status === "approved")
+      return "border-green-500/30 bg-green-500/10 text-green-300";
+    if (status === "rejected")
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+
+    return "border-yellow-400/30 bg-yellow-400/10 text-yellow-300";
+  }
+
+  function formatDate(dateValue: string) {
+    if (!dateValue) return "No date";
+
+    return new Date(dateValue).toLocaleString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
 
   async function approveWithdraw(withdraw: Withdraw) {
@@ -141,115 +171,168 @@ export default function AdminWithdrawsPage() {
     }
   }
 
+  const filters = [
+    { key: "all", label: "All", count: stats.all },
+    { key: "pending", label: "Pending", count: stats.pending },
+    { key: "approved", label: "Approved", count: stats.approved },
+    { key: "rejected", label: "Rejected", count: stats.rejected },
+  ];
+
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-5">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-zinc-900 rounded-2xl p-5 sm:p-6 border border-zinc-800">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+    <main className="min-h-screen bg-[#07070b] text-white">
+      <div className="mx-auto max-w-5xl px-4 py-5">
+        <section className="mb-6 rounded-[28px] border border-red-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-yellow-400">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-red-400">
+                Admin Payments
+              </p>
+
+              <h1 className="mt-2 text-3xl font-black text-white">
                 Withdraw Requests
               </h1>
-              <p className="text-zinc-400 text-sm mt-1">
+
+              <p className="mt-1 text-sm text-zinc-500">
                 User withdraws approve ya reject karo.
               </p>
             </div>
 
             <button
               onClick={() => loadWithdraws()}
-              className="bg-yellow-400 text-black font-bold px-5 py-2 rounded-xl active:scale-95 transition"
+              className="rounded-2xl bg-yellow-400 px-5 py-3 font-black text-black active:scale-95"
             >
               Refresh
             </button>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 mb-5">
-            {["all", "pending", "approved"].map((item) => (
-              <button
-                key={item}
-                onClick={() => setFilter(item)}
-                className={`rounded-xl p-3 font-bold capitalize ${
-                  filter === item
-                    ? "bg-yellow-400 text-black"
-                    : "bg-zinc-800 text-white"
-                }`}
-              >
-                {item}
-              </button>
-            ))}
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
+              <p className="text-xs text-zinc-500">Total Requests</p>
+              <p className="mt-1 text-2xl font-black text-yellow-400">
+                {stats.all}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-yellow-400/20 bg-yellow-400/10 p-4">
+              <p className="text-xs text-yellow-300">Pending</p>
+              <p className="mt-1 text-2xl font-black text-yellow-400">
+                {stats.pending}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
+              <p className="text-xs text-green-300">Approved Amount</p>
+              <p className="mt-1 text-2xl font-black text-green-400">
+                ₹{stats.approvedAmount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
+              <p className="text-xs text-blue-300">Pending Amount</p>
+              <p className="mt-1 text-2xl font-black text-blue-400">
+                ₹{stats.pendingAmount}
+              </p>
+            </div>
           </div>
+        </section>
 
-          {loading ? (
-            <div className="bg-zinc-800 rounded-xl p-6 text-center">
-              Loading withdraws...
-            </div>
-          ) : filteredWithdraws.length === 0 ? (
-            <div className="bg-zinc-800 rounded-xl p-6 text-center text-zinc-400">
+        <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+          {filters.map((item) => (
+            <button
+              key={item.key}
+              onClick={() => setFilter(item.key)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black ${
+                filter === item.key
+                  ? "border-yellow-400 bg-yellow-400 text-black"
+                  : "border-zinc-800 bg-zinc-950 text-zinc-400"
+              }`}
+            >
+              {item.label} ({item.count})
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
+            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+            <p className="font-bold text-zinc-300">Loading withdraws...</p>
+          </div>
+        ) : filteredWithdraws.length === 0 ? (
+          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
+            <p className="font-black text-zinc-300">
               Koi withdraw request nahi hai.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {filteredWithdraws.map((w) => (
-                <div
-                  key={w.id}
-                  className="bg-zinc-800 rounded-xl p-4 border border-zinc-700"
-                >
-                  <div className="flex flex-col sm:flex-row sm:justify-between gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <p className="font-bold text-2xl">₹{w.amount}</p>
-
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-bold ${statusClass(
-                            w.status
-                          )}`}
-                        >
-                          {w.status}
-                        </span>
-                      </div>
-
-                      <p className="text-sm text-zinc-400">ID: #{w.id}</p>
-                      <p className="text-sm text-zinc-400">Phone: {w.phone}</p>
-                      <p className="text-sm text-zinc-400 break-all">
-                        UPI: {w.upi_id}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {filteredWithdraws.map((w) => (
+              <div
+                key={w.id}
+                className="rounded-[26px] border border-zinc-800 bg-zinc-950 p-4 shadow-xl shadow-black/30"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <p className="text-3xl font-black text-yellow-400">
+                        ₹{w.amount}
                       </p>
-                      <p className="text-sm text-zinc-500 break-all">
-                        UID: {w.uid}
-                      </p>
+
+                      <span
+                        className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${statusClass(
+                          w.status
+                        )}`}
+                      >
+                        {w.status}
+                      </span>
                     </div>
 
-                    {w.status === "pending" && (
-                      <div className="grid grid-cols-2 sm:w-56 gap-3">
-                        <button
-                          onClick={() => approveWithdraw(w)}
-                          disabled={loadingId === w.id}
-                          className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl disabled:bg-zinc-700 active:scale-95 transition"
-                        >
-                          {loadingId === w.id ? "..." : "Approve"}
-                        </button>
-
-                        <button
-                          onClick={() => rejectWithdraw(w)}
-                          disabled={loadingId === w.id}
-                          className="bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl disabled:bg-zinc-700 active:scale-95 transition"
-                        >
-                          {loadingId === w.id ? "..." : "Reject"}
-                        </button>
-                      </div>
-                    )}
+                    <div className="mt-4 space-y-2 text-sm">
+                      <p className="text-zinc-400">ID: #{w.id}</p>
+                      <p className="text-zinc-400">Phone: {w.phone}</p>
+                      <p className="break-all text-zinc-300">
+                        UPI:{" "}
+                        <span className="font-black text-green-300">
+                          {w.upi_id}
+                        </span>
+                      </p>
+                      <p className="break-all text-zinc-500">UID: {w.uid}</p>
+                      <p className="text-zinc-500">
+                        Date: {formatDate(w.created_at)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
 
-          <button
-            onClick={() => router.push("/admin")}
-            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-xl mt-6 active:scale-95 transition"
-          >
-            Back to Admin
-          </button>
-        </div>
+                  {w.status === "pending" && (
+                    <div className="grid grid-cols-2 gap-3 sm:w-64">
+                      <button
+                        onClick={() => approveWithdraw(w)}
+                        disabled={loadingId === w.id}
+                        className="rounded-2xl bg-green-500 py-4 font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
+                      >
+                        {loadingId === w.id ? "..." : "Approve"}
+                      </button>
+
+                      <button
+                        onClick={() => rejectWithdraw(w)}
+                        disabled={loadingId === w.id}
+                        className="rounded-2xl bg-red-500 py-4 font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
+                      >
+                        {loadingId === w.id ? "..." : "Reject"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={() => router.push("/admin")}
+          className="mt-6 w-full rounded-2xl border border-zinc-800 bg-zinc-950 py-4 font-black text-zinc-300 active:scale-95"
+        >
+          Back to Admin
+        </button>
       </div>
     </main>
   );

@@ -58,11 +58,23 @@ export default function AdminBattleDetailPage() {
   }
 
   function statusClass(status: string) {
-    if (status === "open") return "bg-green-500/20 text-green-400";
-    if (status === "running") return "bg-blue-500/20 text-blue-400";
-    if (status === "completed") return "bg-yellow-500/20 text-yellow-400";
-    if (status === "cancelled") return "bg-red-500/20 text-red-400";
-    return "bg-zinc-700 text-zinc-300";
+    if (status === "open")
+      return "border-green-500/30 bg-green-500/10 text-green-300";
+    if (status === "running")
+      return "border-blue-500/30 bg-blue-500/10 text-blue-300";
+    if (status === "completed")
+      return "border-yellow-400/30 bg-yellow-400/10 text-yellow-300";
+    if (status === "cancelled")
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+
+    return "border-zinc-700 bg-zinc-800 text-zinc-300";
+  }
+
+  function claimClass(claim: string) {
+    if (claim === "win") return "text-green-400";
+    if (claim === "lose") return "text-red-400";
+    if (claim === "cancel") return "text-yellow-400";
+    return "text-zinc-400";
   }
 
   async function updateWallet(uid: string, amount: number) {
@@ -184,9 +196,10 @@ export default function AdminBattleDetailPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black text-white p-5">
-        <div className="max-w-4xl mx-auto bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
-          Loading battle...
+      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+          <p className="font-bold text-zinc-300">Loading battle...</p>
         </div>
       </main>
     );
@@ -194,120 +207,177 @@ export default function AdminBattleDetailPage() {
 
   if (!battle) {
     return (
-      <main className="min-h-screen bg-black text-white p-5">
-        <div className="max-w-4xl mx-auto bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
-          Battle not found
+      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
+        <div className="rounded-[28px] border border-red-500/30 bg-red-500/10 p-6 text-center">
+          <p className="font-black text-red-300">Battle not found</p>
         </div>
       </main>
     );
   }
 
   const closed = battle.status === "completed" || battle.status === "cancelled";
+  const winningAmount = Number(battle.amount || 0) * 2;
 
   return (
-    <main className="min-h-screen bg-black text-white p-4 sm:p-5">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-zinc-900 rounded-2xl p-5 sm:p-6 border border-zinc-800">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-5">
+    <main className="min-h-screen bg-[#07070b] text-white">
+      <div className="mx-auto max-w-5xl px-4 py-5">
+        <section className="mb-6 rounded-[28px] border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-yellow-400">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-400">
+                Admin Battle Detail
+              </p>
+
+              <h1 className="mt-2 text-3xl font-black text-white">
                 Battle #{battleId}
               </h1>
 
-              <div className="flex items-center gap-3 mt-3 flex-wrap">
+              <div className="mt-3 flex flex-wrap items-center gap-3">
                 <span
-                  className={`px-3 py-1 rounded-full text-xs font-bold ${statusClass(
+                  className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${statusClass(
                     battle.status
                   )}`}
                 >
                   {battle.status}
                 </span>
 
-                <span className="text-zinc-300 font-bold">
-                  Amount: ₹{battle.amount}
+                <span className="rounded-full border border-zinc-800 bg-black px-3 py-1 text-xs font-bold text-zinc-300">
+                  Entry ₹{battle.amount}
+                </span>
+
+                <span className="rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-xs font-bold text-green-300">
+                  Winning ₹{winningAmount}
                 </span>
               </div>
             </div>
 
             <button
               onClick={() => router.push("/admin/battles")}
-              className="bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-5 py-3 rounded-xl active:scale-95 transition"
+              className="rounded-2xl border border-zinc-800 bg-zinc-950 px-5 py-3 font-black text-zinc-300 active:scale-95"
             >
-              Back
+              ← Back
             </button>
           </div>
+        </section>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-            <div className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
-              <p className="text-zinc-400 text-sm">Creator UID</p>
-              <p className="font-bold break-all mt-1">{battle.creator_uid}</p>
-              <p className="text-zinc-400 text-sm mt-3">Creator Claim</p>
-              <p className="font-bold">{battle.creator_claim || "Not uploaded"}</p>
-            </div>
+        <section className="mb-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="rounded-[26px] border border-zinc-800 bg-zinc-950 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
+              Creator
+            </p>
 
-            <div className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
-              <p className="text-zinc-400 text-sm">Joiner UID</p>
-              <p className="font-bold break-all mt-1">
-                {battle.joiner_uid || "Not joined"}
-              </p>
-              <p className="text-zinc-400 text-sm mt-3">Joiner Claim</p>
-              <p className="font-bold">{battle.joiner_claim || "Not uploaded"}</p>
-            </div>
+            <p className="mt-3 text-sm text-zinc-500">UID</p>
+            <p className="mt-1 break-all font-bold text-zinc-200">
+              {battle.creator_uid}
+            </p>
+
+            <p className="mt-4 text-sm text-zinc-500">Claim</p>
+            <p
+              className={`mt-1 text-xl font-black uppercase ${claimClass(
+                battle.creator_claim
+              )}`}
+            >
+              {battle.creator_claim || "Not uploaded"}
+            </p>
           </div>
 
-          {battle.room_code && (
-            <div className="bg-zinc-800 rounded-xl p-4 border border-zinc-700 mb-5">
-              <p className="text-zinc-400 text-sm">Room Code</p>
-              <p className="text-2xl font-bold tracking-widest mt-1">
-                {battle.room_code}
+          <div className="rounded-[26px] border border-zinc-800 bg-zinc-950 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
+              Joiner
+            </p>
+
+            <p className="mt-3 text-sm text-zinc-500">UID</p>
+            <p className="mt-1 break-all font-bold text-zinc-200">
+              {battle.joiner_uid || "Not joined"}
+            </p>
+
+            <p className="mt-4 text-sm text-zinc-500">Claim</p>
+            <p
+              className={`mt-1 text-xl font-black uppercase ${claimClass(
+                battle.joiner_claim
+              )}`}
+            >
+              {battle.joiner_claim || "Not uploaded"}
+            </p>
+          </div>
+        </section>
+
+        <section className="mb-5 rounded-[26px] border border-zinc-800 bg-zinc-950 p-5">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-zinc-800 bg-black p-4">
+              <p className="text-xs text-zinc-500">Room Code</p>
+              <p className="mt-1 text-2xl font-black tracking-widest text-yellow-300">
+                {battle.room_code || "N/A"}
               </p>
             </div>
-          )}
 
-          {battle.winner_uid && (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 mb-5">
-              <p className="text-green-400 font-bold break-all">
-                Winner: {battle.winner_uid}
+            <div className="rounded-2xl border border-zinc-800 bg-black p-4">
+              <p className="text-xs text-zinc-500">Winner</p>
+              <p className="mt-1 break-all text-sm font-bold text-green-300">
+                {battle.winner_uid || "Not selected"}
               </p>
             </div>
-          )}
 
-          {battle.status === "cancelled" && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 mb-5">
-              <p className="text-red-400 font-bold">
-                Battle Cancelled / Refund Done
+            <div className="rounded-2xl border border-zinc-800 bg-black p-4">
+              <p className="text-xs text-zinc-500">Loser</p>
+              <p className="mt-1 break-all text-sm font-bold text-red-300">
+                {battle.loser_uid || "Not selected"}
               </p>
             </div>
-          )}
+          </div>
+        </section>
 
-          <button
-            onClick={cancelBattle}
-            disabled={saving || closed}
-            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-xl disabled:bg-zinc-700 disabled:text-zinc-400 active:scale-95 transition mb-6"
-          >
-            {saving ? "Saving..." : "Cancel Battle & Refund"}
-          </button>
+        {battle.status === "cancelled" && (
+          <div className="mb-5 rounded-[24px] border border-red-500/30 bg-red-500/10 p-4">
+            <p className="font-black text-red-300">
+              Battle Cancelled / Refund Done
+            </p>
+          </div>
+        )}
 
-          <h2 className="text-2xl font-bold text-yellow-400 mb-4">
-            Battle Screenshots
-          </h2>
+        {battle.winner_uid && (
+          <div className="mb-5 rounded-[24px] border border-green-500/30 bg-green-500/10 p-4">
+            <p className="font-black text-green-300">Winner Selected ✅</p>
+            <p className="mt-1 break-all text-sm text-zinc-300">
+              {battle.winner_uid}
+            </p>
+          </div>
+        )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
-              <h3 className="font-bold mb-3">Creator Screenshot</h3>
+        <button
+          onClick={cancelBattle}
+          disabled={saving || closed}
+          className="mb-6 w-full rounded-2xl bg-red-600 py-4 font-black text-white shadow-lg shadow-red-500/20 disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
+        >
+          {saving ? "Saving..." : "Cancel Battle & Refund"}
+        </button>
+
+        <section>
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
+              Proof Review
+            </p>
+            <h2 className="mt-1 text-2xl font-black">Battle Screenshots</h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className="rounded-[26px] border border-zinc-800 bg-zinc-950 p-4">
+              <h3 className="mb-3 font-black text-yellow-400">
+                Creator Screenshot
+              </h3>
 
               {battle.creator_result ? (
                 <a href={battle.creator_result} target="_blank">
                   <img
                     src={battle.creator_result}
                     alt="Creator Result"
-                    className="w-full rounded-xl border border-zinc-700 mb-4"
+                    className="mb-4 w-full rounded-2xl border border-zinc-800"
                   />
                 </a>
               ) : (
-                <p className="text-red-400 mb-4">
+                <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
                   Creator ne screenshot upload nahi kiya.
-                </p>
+                </div>
               )}
 
               <button
@@ -315,27 +385,29 @@ export default function AdminBattleDetailPage() {
                   selectWinner(battle.creator_uid, battle.joiner_uid)
                 }
                 disabled={saving || closed || !battle.joiner_uid}
-                className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-xl disabled:bg-zinc-700 disabled:text-zinc-400 active:scale-95 transition"
+                className="w-full rounded-2xl bg-green-500 py-4 font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
               >
                 Creator Winner
               </button>
             </div>
 
-            <div className="bg-zinc-800 rounded-xl p-4 border border-zinc-700">
-              <h3 className="font-bold mb-3">Joiner Screenshot</h3>
+            <div className="rounded-[26px] border border-zinc-800 bg-zinc-950 p-4">
+              <h3 className="mb-3 font-black text-yellow-400">
+                Joiner Screenshot
+              </h3>
 
               {battle.joiner_result ? (
                 <a href={battle.joiner_result} target="_blank">
                   <img
                     src={battle.joiner_result}
                     alt="Joiner Result"
-                    className="w-full rounded-xl border border-zinc-700 mb-4"
+                    className="mb-4 w-full rounded-2xl border border-zinc-800"
                   />
                 </a>
               ) : (
-                <p className="text-red-400 mb-4">
+                <div className="mb-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
                   Joiner ne screenshot upload nahi kiya.
-                </p>
+                </div>
               )}
 
               <button
@@ -343,13 +415,13 @@ export default function AdminBattleDetailPage() {
                   selectWinner(battle.joiner_uid, battle.creator_uid)
                 }
                 disabled={saving || closed || !battle.joiner_uid}
-                className="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl disabled:bg-zinc-700 disabled:text-zinc-400 active:scale-95 transition"
+                className="w-full rounded-2xl bg-blue-500 py-4 font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
               >
                 Joiner Winner
               </button>
             </div>
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );

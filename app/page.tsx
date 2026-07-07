@@ -1,14 +1,16 @@
 import Link from "next/link";
+import InstallAppButton from "./components/InstallAppButton";
+
 export default function Home() {
   return (
     <main className="min-h-screen bg-black text-white">
       {/* Header */}
       <header className="flex items-center justify-between p-5 border-b border-yellow-500">
         <Link href="/login">
-  <button className="bg-yellow-400 text-black px-4 py-2 rounded-lg font-semibold">
-    Login
-  </button>
-</Link>
+          <button className="bg-yellow-400 text-black px-4 py-2 rounded-lg font-semibold">
+            Login
+          </button>
+        </Link>
       </header>
 
       {/* Hero */}
@@ -91,6 +93,9 @@ export default function Home() {
       <footer className="border-t border-zinc-800 py-6 text-center text-gray-400">
         © 2026 DeshiLudo • Play Fair • Secure Payments
       </footer>
+
+      {/* Install App Button */}
+      <InstallAppButton />
     </main>
   );
 }

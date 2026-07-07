@@ -396,51 +396,140 @@ export default function BattlePage() {
     }
   }
 
+  function statusClass(status: string) {
+    if (status === "open") return "bg-blue-500/15 text-blue-300 border-blue-500/30";
+    if (status === "running") return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
+    if (status === "completed") return "bg-green-500/15 text-green-300 border-green-500/30";
+    if (status === "cancelled") return "bg-red-500/15 text-red-300 border-red-500/30";
+    return "bg-zinc-500/15 text-zinc-300 border-zinc-500/30";
+  }
+
   if (loading) {
     return (
-      <main className="min-h-screen bg-black text-white p-5">
-        <p>Loading...</p>
+      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+          <p className="text-zinc-400 font-semibold">Battle loading...</p>
+        </div>
       </main>
     );
   }
 
   if (!battle) {
     return (
-      <main className="min-h-screen bg-black text-white p-5">
-        <p>Battle not found</p>
+      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
+        <div className="rounded-3xl border border-red-500/30 bg-red-500/10 p-6 text-center">
+          <p className="text-red-300 font-bold">Battle not found</p>
+        </div>
       </main>
     );
   }
 
+  const userIsPlayer = isCreator() || isJoiner();
+  const battleClosed =
+    battle.status === "completed" || battle.status === "cancelled";
+
   return (
-    <main className="min-h-screen bg-black text-white p-5">
-      <div className="max-w-xl mx-auto bg-zinc-900 rounded-2xl p-6 border border-zinc-800">
-        <h1 className="text-3xl font-bold text-yellow-400 mb-2">
-          Battle #{battleId}
-        </h1>
+    <main className="min-h-screen bg-[#07070b] text-white">
+      <div className="mx-auto max-w-xl px-4 py-5">
+        <div className="mb-5 rounded-[28px] border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-400">
+                DeshiLudo Battle
+              </p>
+              <h1 className="mt-2 text-3xl font-black">
+                Battle #{battleId}
+              </h1>
+            </div>
 
-        <p className="text-zinc-400 mb-2">Amount: ₹{battle.amount}</p>
-        <p className="text-zinc-400 mb-6">Status: {battle.status}</p>
+            <span
+              className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${statusClass(
+                battle.status
+              )}`}
+            >
+              {battle.status}
+            </span>
+          </div>
 
-        {battle.status === "completed" && (
-          <p className="text-green-400 mb-4">Winner: {battle.winner_uid}</p>
-        )}
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-4">
+              <p className="text-xs text-zinc-500">Entry Amount</p>
+              <p className="mt-1 text-2xl font-black text-green-400">
+                ₹{battle.amount}
+              </p>
+            </div>
 
-        {battle.status === "cancelled" && (
-          <p className="text-red-400 mb-4">Battle Cancelled / Refunded</p>
-        )}
+            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-4">
+              <p className="text-xs text-zinc-500">Winning</p>
+              <p className="mt-1 text-2xl font-black text-yellow-400">
+                ₹{Number(battle.amount || 0) * 2}
+              </p>
+            </div>
+          </div>
 
-        <div className="bg-zinc-800 rounded-xl p-4 mb-5">
-          <h2 className="text-xl font-bold text-yellow-400 mb-2">
-            Ludo Room Code
-          </h2>
+          <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-zinc-500">You are</p>
+                <p className="font-bold">
+                  {isCreator()
+                    ? "Creator"
+                    : isJoiner()
+                    ? "Joiner"
+                    : "Viewer"}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-zinc-500">Opponent</p>
+                <p className="font-bold">
+                  {battle.joiner_uid ? "Joined ✅" : "Waiting..."}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {battle.status === "completed" && (
+            <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/10 p-4">
+              <p className="font-bold text-green-300">Winner Selected ✅</p>
+              <p className="mt-1 break-all text-xs text-zinc-400">
+                {battle.winner_uid}
+              </p>
+            </div>
+          )}
+
+          {battle.status === "cancelled" && (
+            <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
+              <p className="font-bold text-red-300">
+                Battle Cancelled / Refunded ✅
+              </p>
+            </div>
+          )}
+        </div>
+
+        <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-black text-yellow-400">
+                Ludo Room Code
+              </h2>
+              <p className="mt-1 text-sm text-zinc-500">
+                Creator room code save karega.
+              </p>
+            </div>
+            <div className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-300">
+              LIVE
+            </div>
+          </div>
 
           {isCreator() ? (
             <>
               {!battle.joiner_uid ? (
-                <p className="text-red-400">Waiting for player to join...</p>
+                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+                  Waiting for player to join...
+                </div>
               ) : battle.room_code ? (
-                <div className="bg-black rounded-xl p-4 text-center text-2xl font-bold tracking-widest">
+                <div className="rounded-2xl border border-yellow-400/30 bg-black p-5 text-center text-3xl font-black tracking-[0.25em] text-yellow-300">
                   {battle.room_code}
                 </div>
               ) : (
@@ -450,13 +539,13 @@ export default function BattlePage() {
                     placeholder="Room code enter karo"
                     value={roomCode}
                     onChange={(e) => setRoomCode(e.target.value)}
-                    className="w-full bg-zinc-900 text-white p-4 rounded-xl mb-3 outline-none"
+                    className="mb-3 w-full rounded-2xl border border-zinc-800 bg-black p-4 text-white outline-none focus:border-yellow-400"
                   />
 
                   <button
                     onClick={saveRoomCode}
                     disabled={savingRoom}
-                    className="w-full bg-blue-500 text-white font-bold py-3 rounded-xl disabled:bg-zinc-700 disabled:text-zinc-400"
+                    className="w-full rounded-2xl bg-yellow-400 py-4 font-black text-black disabled:bg-zinc-800 disabled:text-zinc-500"
                   >
                     {savingRoom ? "Saving..." : "Save Room Code"}
                   </button>
@@ -464,7 +553,7 @@ export default function BattlePage() {
               )}
             </>
           ) : (
-            <div className="bg-black rounded-xl p-4 text-center text-2xl font-bold tracking-widest">
+            <div className="rounded-2xl border border-zinc-800 bg-black p-5 text-center text-3xl font-black tracking-[0.25em] text-yellow-300">
               {battle.room_code || "Waiting..."}
             </div>
           )}
@@ -472,71 +561,86 @@ export default function BattlePage() {
           {battle.room_code && (
             <button
               onClick={copyRoomCode}
-              className="w-full bg-yellow-400 text-black font-bold py-3 rounded-xl mt-3"
+              className="mt-3 w-full rounded-2xl border border-yellow-400/40 bg-yellow-400/10 py-4 font-black text-yellow-300"
             >
               Copy Room Code
             </button>
           )}
-        </div>
+        </section>
 
-        {battle.room_code &&
-        battle.status !== "completed" &&
-        battle.status !== "cancelled" ? (
-          <div className="bg-zinc-800 rounded-xl p-4 mb-5">
-            <h2 className="text-xl font-bold text-yellow-400 mb-3">
-              Upload Result Screenshot
+        {battle.room_code && !battleClosed ? (
+          <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
+            <h2 className="text-xl font-black text-yellow-400">
+              Upload Result
             </h2>
+            <p className="mt-1 text-sm text-zinc-500">
+              Win / Lose / Cancel select karke screenshot upload karo.
+            </p>
 
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            {!userIsPlayer && (
+              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+                Aap is battle ke player nahi ho.
+              </div>
+            )}
+
+            <div className="mt-5 grid grid-cols-3 gap-2">
               {["win", "lose", "cancel"].map((item) => (
                 <button
                   key={item}
                   onClick={() => setClaim(item)}
-                  className={`py-3 rounded-xl font-bold ${
+                  className={`rounded-2xl py-4 text-sm font-black uppercase ${
                     claim === item
                       ? item === "win"
                         ? "bg-green-500 text-white"
                         : item === "lose"
                         ? "bg-red-500 text-white"
                         : "bg-yellow-400 text-black"
-                      : "bg-zinc-900 text-zinc-300"
+                      : "border border-zinc-800 bg-black text-zinc-400"
                   }`}
                 >
-                  {item.toUpperCase()}
+                  {item}
                 </button>
               ))}
             </div>
 
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="w-full mb-5"
-            />
+            <label className="mt-4 block rounded-2xl border border-dashed border-zinc-700 bg-black p-4 text-center">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                className="hidden"
+              />
+              <p className="font-bold text-zinc-200">
+                {file ? file.name : "Tap to select screenshot"}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">
+                Image proof required
+              </p>
+            </label>
 
             <button
               onClick={submitResult}
-              disabled={uploading}
-              className="w-full bg-green-500 text-white font-bold py-4 rounded-xl disabled:bg-zinc-700 disabled:text-zinc-400"
+              disabled={uploading || !userIsPlayer}
+              className="mt-4 w-full rounded-2xl bg-green-500 py-4 font-black text-white shadow-lg shadow-green-500/20 disabled:bg-zinc-800 disabled:text-zinc-500"
             >
               {uploading ? "Uploading..." : "Upload Result"}
             </button>
-          </div>
+          </section>
         ) : (
-          <div className="bg-zinc-800 rounded-xl p-4 mb-5">
+          <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
             <p className="text-zinc-400">
-              {battle.status === "completed" || battle.status === "cancelled"
+              {battleClosed
                 ? "Battle closed hai."
                 : "Room code save hone ke baad result upload option aayega."}
             </p>
-          </div>
+          </section>
         )}
 
         <button
           onClick={() => router.push("/battle-history")}
-          className="w-full bg-zinc-800 text-white font-bold py-4 rounded-xl"
+          className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 py-4 font-black text-white"
         >
-          Back
+          Back to Battle History
         </button>
       </div>
     </main>
