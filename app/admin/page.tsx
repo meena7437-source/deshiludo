@@ -25,21 +25,9 @@ export default function AdminDashboardPage() {
 
     const channel = supabase
       .channel("admin-dashboard-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "battles" },
-        () => loadStats()
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "deposits" },
-        () => loadStats()
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "withdraws" },
-        () => loadStats()
-      )
+      .on("postgres_changes", { event: "*", schema: "public", table: "battles" }, () => loadStats())
+      .on("postgres_changes", { event: "*", schema: "public", table: "deposits" }, () => loadStats())
+      .on("postgres_changes", { event: "*", schema: "public", table: "withdraws" }, () => loadStats())
       .subscribe();
 
     return () => {
@@ -51,49 +39,30 @@ export default function AdminDashboardPage() {
     const { data: wallets } = await supabase.from("wallets").select("balance");
     const { data: users } = await supabase.from("users").select("id");
     const { data: battles } = await supabase.from("battles").select("status");
-    const { data: deposits } = await supabase
-      .from("deposits")
-      .select("amount,status");
-    const { data: withdraws } = await supabase
-      .from("withdraws")
-      .select("amount,status");
+    const { data: deposits } = await supabase.from("deposits").select("amount,status");
+    const { data: withdraws } = await supabase.from("withdraws").select("amount,status");
 
     setStats({
       totalUsers: users?.length || 0,
-
-      totalWallet:
-        wallets?.reduce((sum, w: any) => sum + Number(w.balance || 0), 0) || 0,
-
+      totalWallet: wallets?.reduce((sum, w: any) => sum + Number(w.balance || 0), 0) || 0,
       totalBattles: battles?.length || 0,
-
-      openBattles:
-        battles?.filter((b: any) => b.status === "open").length || 0,
-
-      completedBattles:
-        battles?.filter((b: any) => b.status === "completed").length || 0,
-
-      totalDeposits:
-        deposits
-          ?.filter((d: any) => d.status === "approved")
-          .reduce((sum, d: any) => sum + Number(d.amount || 0), 0) || 0,
-
-      totalWithdraws:
-        withdraws
-          ?.filter((w: any) => w.status === "approved")
-          .reduce((sum, w: any) => sum + Number(w.amount || 0), 0) || 0,
-
-      pendingDeposits:
-        deposits?.filter((d: any) => d.status === "pending").length || 0,
-
-      pendingWithdraws:
-        withdraws?.filter((w: any) => w.status === "pending").length || 0,
+      openBattles: battles?.filter((b: any) => b.status === "open").length || 0,
+      completedBattles: battles?.filter((b: any) => b.status === "completed").length || 0,
+      totalDeposits: deposits?.filter((d: any) => d.status === "approved").reduce((sum, d: any) => sum + Number(d.amount || 0), 0) || 0,
+      totalWithdraws: withdraws?.filter((w: any) => w.status === "approved").reduce((sum, w: any) => sum + Number(w.amount || 0), 0) || 0,
+      pendingDeposits: deposits?.filter((d: any) => d.status === "pending").length || 0,
+      pendingWithdraws: withdraws?.filter((w: any) => w.status === "pending").length || 0,
     });
   }
 
-  function logout() {
-    localStorage.removeItem("deshiludo_admin");
-    localStorage.removeItem("deshiludo_admin_role");
+  async function logout() {
+    await fetch("/api/admin/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+
     router.replace("/admin-login");
+    router.refresh();
   }
 
   const mainActions = [
@@ -191,20 +160,17 @@ export default function AdminDashboardPage() {
           <section className="mb-6 rounded-[24px] border border-yellow-400/30 bg-yellow-400/10 p-4">
             <p className="font-black text-yellow-300">Pending Alert ⚠️</p>
             <p className="mt-1 text-sm text-zinc-300">
-              {stats.pendingDeposits} deposit aur {stats.pendingWithdraws} withdraw
-              request approval ke liye pending hai.
+              {stats.pendingDeposits} deposit aur {stats.pendingWithdraws} withdraw request approval ke liye pending hai.
             </p>
           </section>
         )}
 
         <section>
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
-                Realtime
-              </p>
-              <h2 className="mt-1 text-2xl font-black">Live Stats</h2>
-            </div>
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
+              Realtime
+            </p>
+            <h2 className="mt-1 text-2xl font-black">Live Stats</h2>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
