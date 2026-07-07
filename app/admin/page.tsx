@@ -28,17 +28,17 @@ export default function AdminDashboardPage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "battles" },
-        loadStats
+        () => loadStats()
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "deposits" },
-        loadStats
+        () => loadStats()
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "withdraws" },
-        loadStats
+        () => loadStats()
       )
       .subscribe();
 
@@ -60,31 +60,40 @@ export default function AdminDashboardPage() {
 
     setStats({
       totalUsers: users?.length || 0,
+
       totalWallet:
         wallets?.reduce((sum, w: any) => sum + Number(w.balance || 0), 0) || 0,
+
       totalBattles: battles?.length || 0,
-      openBattles: battles?.filter((b: any) => b.status === "open").length || 0,
+
+      openBattles:
+        battles?.filter((b: any) => b.status === "open").length || 0,
+
       completedBattles:
         battles?.filter((b: any) => b.status === "completed").length || 0,
+
       totalDeposits:
         deposits
           ?.filter((d: any) => d.status === "approved")
           .reduce((sum, d: any) => sum + Number(d.amount || 0), 0) || 0,
+
       totalWithdraws:
         withdraws
           ?.filter((w: any) => w.status === "approved")
           .reduce((sum, w: any) => sum + Number(w.amount || 0), 0) || 0,
+
       pendingDeposits:
         deposits?.filter((d: any) => d.status === "pending").length || 0,
+
       pendingWithdraws:
         withdraws?.filter((w: any) => w.status === "pending").length || 0,
     });
   }
 
   function logout() {
-    document.cookie = "deshiludo_admin=; path=/; max-age=0";
-    document.cookie = "deshiludo_admin_role=; path=/; max-age=0";
-    router.push("/admin-login");
+    localStorage.removeItem("deshiludo_admin");
+    localStorage.removeItem("deshiludo_admin_role");
+    router.replace("/admin-login");
   }
 
   const mainActions = [
@@ -141,7 +150,7 @@ export default function AdminDashboardPage() {
 
             <button
               onClick={logout}
-              className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-300"
+              className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-300 active:scale-95"
             >
               Logout
             </button>
