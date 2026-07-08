@@ -11,6 +11,12 @@ import {
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
+function makeReferralCode(phoneNumber: string) {
+  const last4 = phoneNumber.slice(-4);
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `DL${last4}${random}`;
+}
+
 export default function LoginPage() {
   const router = useRouter();
 
@@ -18,8 +24,11 @@ export default function LoginPage() {
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
+  const [referralCode, setReferralCode] = useState("");
+
   const [confirmation, setConfirmation] =
     useState<ConfirmationResult | null>(null);
+
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
@@ -28,9 +37,7 @@ export default function LoginPage() {
       recaptchaRef.current = new RecaptchaVerifier(
         auth,
         "recaptcha-container",
-        {
-          size: "normal",
-        }
+        { size: "normal" }
       );
 
       recaptchaRef.current.render();
@@ -83,10 +90,56 @@ export default function LoginPage() {
 
       const userCredential = await confirmation.confirm(otp);
 
+      const uid = userCredential.user.uid;
+      const mobile = userCredential.user.phoneNumber || "+91" + phone;
+
+      const { data: existingUser, error: userCheckError } = await supabase
+        .from("users")
+        .select("id, firebase_uid, referral_code, referred_by")
+        .eq("firebase_uid", uid)
+        .maybeSingle();
+
+      if (userCheckError) {
+        toast.error(userCheckError.message);
+        return;
+      }
+
+      let finalReferralCode = existingUser?.referral_code;
+
+      if (!finalReferralCode) {
+        finalReferralCode = makeReferralCode(mobile);
+      }
+
+      let finalReferredBy = existingUser?.referred_by || null;
+
+      if (!existingUser && referralCode.trim()) {
+        const enteredCode = referralCode.trim().toUpperCase();
+
+        const { data: refUser, error: refError } = await supabase
+          .from("users")
+          .select("referral_code")
+          .eq("referral_code", enteredCode)
+          .maybeSingle();
+
+        if (refError) {
+          toast.error(refError.message);
+          return;
+        }
+
+        if (!refUser) {
+          toast.error("Referral code galat hai");
+          return;
+        }
+
+        finalReferredBy = enteredCode;
+      }
+
       const { error } = await supabase.from("users").upsert(
         {
-          firebase_uid: userCredential.user.uid,
-          phone: userCredential.user.phoneNumber,
+          firebase_uid: uid,
+          phone: mobile,
+          referral_code: finalReferralCode,
+          referred_by: finalReferredBy,
         },
         {
           onConflict: "firebase_uid",
@@ -110,7 +163,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="bg-zinc-900 p-8 rounded-2xl w-full max-w-sm border border-zinc-800">
+      <div className="bg-zinc-900 p-6 rounded-2xl w-full max-w-sm border border-zinc-800">
         <h1 className="text-3xl font-bold text-yellow-400 mb-6 text-center">
           Login
         </h1>
@@ -119,8 +172,16 @@ export default function LoginPage() {
           type="tel"
           placeholder="Enter Mobile Number"
           value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
           maxLength={10}
+          className="w-full p-3 rounded-lg bg-zinc-800 text-white mb-4 outline-none"
+        />
+
+        <input
+          type="text"
+          placeholder="Referral Code Optional"
+          value={referralCode}
+          onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
           className="w-full p-3 rounded-lg bg-zinc-800 text-white mb-4 outline-none"
         />
 
@@ -132,13 +193,13 @@ export default function LoginPage() {
           className="w-full bg-yellow-400 disabled:opacity-60 text-black font-bold py-3 rounded-lg mb-4"
         >
           {sending ? "Sending..." : "Send OTP"}
-     ē   </button>
+        </button>
 
         <input
           type="text"
           placeholder="Enter OTP"
           value={otp}
-          onChange={(e) => setOtp(e.target.value)}
+          onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
           maxLength={6}
           className="w-full p-3 rounded-lg bg-zinc-800 text-white mb-4 outline-none"
         />
