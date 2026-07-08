@@ -15,7 +15,7 @@ export default function WithdrawPage() {
   const [phone, setPhone] = useState("");
   const [depositBalance, setDepositBalance] = useState(0);
   const [winningBalance, setWinningBalance] = useState(0);
-  const [kycStatus, setKycStatus] = useState("not_submitted");
+  const [kycStatus, setKycStatus] = useState("pending");
   const [amount, setAmount] = useState("");
   const [upiId, setUpiId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -28,13 +28,10 @@ export default function WithdrawPage() {
         return;
       }
 
-      const userUid = user.uid;
-      const userPhone = user.phoneNumber || "";
+      setUid(user.uid);
+      setPhone(user.phoneNumber || "");
 
-      setUid(userUid);
-      setPhone(userPhone);
-
-      await Promise.all([loadWallet(userUid), loadKyc(userUid, userPhone)]);
+      await Promise.all([loadWallet(user.uid), loadKyc(user.uid)]);
 
       setLoading(false);
     });
@@ -58,26 +55,19 @@ export default function WithdrawPage() {
     setWinningBalance(Number(data?.winning_balance || 0));
   }
 
-  async function loadKyc(userId: string, userPhone: string) {
-    let query = supabase.from("kyc").select("status, updated_at");
-
-    if (userPhone) {
-      query = query.or(`uid.eq.${userId},phone.eq.${userPhone}`);
-    } else {
-      query = query.eq("uid", userId);
-    }
-
-    const { data, error } = await query
-      .order("updated_at", { ascending: false })
-      .limit(1)
+  async function loadKyc(userId: string) {
+    const { data, error } = await supabase
+      .from("users")
+      .select("kyc_status")
+      .eq("firebase_uid", userId)
       .maybeSingle();
 
     if (error) {
-      setKycStatus("not_submitted");
+      setKycStatus("pending");
       return;
     }
 
-    setKycStatus(data?.status || "not_submitted");
+    setKycStatus(data?.kyc_status || "pending");
   }
 
   async function submitWithdraw() {
@@ -180,7 +170,7 @@ export default function WithdrawPage() {
           </p>
 
           {!kycApproved && (
-            <Link href="/kyc">
+            <Link href="/profile">
               <button className="mt-2 bg-yellow-400 text-black px-3 py-2 rounded-lg text-xs font-black">
                 Complete KYC
               </button>
