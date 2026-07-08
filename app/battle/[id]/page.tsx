@@ -191,13 +191,13 @@ export default function BattlePage() {
     }
 
     if (data === "waiting_claims") {
-      toast.success("Result uploaded ✅ Opponent ke result ka wait hai");
+      toast.success("Result submitted ✅ Opponent ke result ka wait hai");
       await loadBattle(false);
       return;
     }
 
     if (data === "dispute") {
-      toast.success("Result uploaded ✅ Admin review required");
+      toast.success("Result submitted ✅ Admin review required");
       await loadBattle(false);
       return;
     }
@@ -286,7 +286,7 @@ export default function BattlePage() {
     }
 
     if (!battle.room_code) {
-      toast.error("Room code save hone ke baad result upload hoga");
+      toast.error("Room code save hone ke baad result submit hoga");
       return;
     }
 
@@ -296,7 +296,7 @@ export default function BattlePage() {
     }
 
     if (myResultUploaded()) {
-      toast.error("Aap result already upload kar chuke ho");
+      toast.error("Aap result already submit kar chuke ho");
       return;
     }
 
@@ -305,31 +305,35 @@ export default function BattlePage() {
       return;
     }
 
-    if (!file) {
-      toast.error("Please select screenshot");
+    if (claim === "win" && !file) {
+      toast.error("Win claim ke liye screenshot zaroori hai");
       return;
     }
 
     setUploading(true);
 
     try {
-      const safeFileName = file.name.replaceAll(" ", "-");
-      const filePath = `battle-${battleId}/${user.uid}-${Date.now()}-${safeFileName}`;
+      let imageUrl = "";
 
-      const { error: uploadError } = await supabase.storage
-        .from("battle-results")
-        .upload(filePath, file);
+      if (claim === "win" && file) {
+        const safeFileName = file.name.replaceAll(" ", "-");
+        const filePath = `battle-${battleId}/${user.uid}-${Date.now()}-${safeFileName}`;
 
-      if (uploadError) {
-        toast.error(uploadError.message);
-        return;
+        const { error: uploadError } = await supabase.storage
+          .from("battle-results")
+          .upload(filePath, file);
+
+        if (uploadError) {
+          toast.error(uploadError.message);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from("battle-results")
+          .getPublicUrl(filePath);
+
+        imageUrl = urlData.publicUrl;
       }
-
-      const { data: urlData } = supabase.storage
-        .from("battle-results")
-        .getPublicUrl(filePath);
-
-      const imageUrl = urlData.publicUrl;
 
       let updateData: any = {};
 
@@ -364,7 +368,7 @@ export default function BattlePage() {
       setFile(null);
     } catch (err: any) {
       console.error(err);
-      toast.error(err?.message || "Result upload failed");
+      toast.error(err?.message || "Result submit failed");
     } finally {
       setUploading(false);
     }
@@ -386,7 +390,7 @@ export default function BattlePage() {
   }
 
   function claimBadge(value: string | null) {
-    if (!value) return "Not uploaded";
+    if (!value) return "Not submitted";
     if (value === "win") return "Win Claim";
     if (value === "lose") return "Lose Claim";
     if (value === "cancel") return "Cancel Claim";
@@ -517,8 +521,7 @@ export default function BattlePage() {
                 Admin Review Required ⚠️
               </p>
               <p className="mt-1 text-xs text-zinc-400">
-                Dono players ne result upload kar diya hai. Admin decision
-                required.
+                Dono players ne result submit kar diya hai. Admin decision required.
               </p>
             </div>
           )}
@@ -605,10 +608,10 @@ export default function BattlePage() {
         {battle.room_code && !battleClosed ? (
           <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
             <h2 className="text-xl font-black text-yellow-400">
-              Upload Result
+              Submit Result
             </h2>
             <p className="mt-1 text-sm text-zinc-500">
-              Win / Lose / Cancel select karke screenshot upload karo.
+              Win par screenshot zaroori hai. Lose/Cancel par screenshot nahi lagega.
             </p>
 
             {!userIsPlayer && (
@@ -619,7 +622,7 @@ export default function BattlePage() {
 
             {myResultUploaded() ? (
               <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-300">
-                Aap result already upload kar chuke ho ✅
+                Aap result already submit kar chuke ho ✅
               </div>
             ) : (
               <>
@@ -627,7 +630,10 @@ export default function BattlePage() {
                   {["win", "lose", "cancel"].map((item) => (
                     <button
                       key={item}
-                      onClick={() => setClaim(item)}
+                      onClick={() => {
+                        setClaim(item);
+                        if (item !== "win") setFile(null);
+                      }}
                       className={`rounded-2xl py-4 text-sm font-black uppercase ${
                         claim === item
                           ? item === "win"
@@ -643,27 +649,29 @@ export default function BattlePage() {
                   ))}
                 </div>
 
-                <label className="mt-4 block rounded-2xl border border-dashed border-zinc-700 bg-black p-4 text-center">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={(e) => setFile(e.target.files?.[0] || null)}
-                    className="hidden"
-                  />
-                  <p className="font-bold text-zinc-200">
-                    {file ? file.name : "Tap to select screenshot"}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Image proof required
-                  </p>
-                </label>
+                {claim === "win" && (
+                  <label className="mt-4 block rounded-2xl border border-dashed border-zinc-700 bg-black p-4 text-center">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      className="hidden"
+                    />
+                    <p className="font-bold text-zinc-200">
+                      {file ? file.name : "Tap to select screenshot"}
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Win claim ke liye screenshot zaroori hai.
+                    </p>
+                  </label>
+                )}
 
                 <button
                   onClick={submitResult}
                   disabled={uploading || !userIsPlayer}
                   className="mt-4 w-full rounded-2xl bg-green-500 py-4 font-black text-white shadow-lg shadow-green-500/20 disabled:bg-zinc-800 disabled:text-zinc-500"
                 >
-                  {uploading ? "Uploading..." : "Upload Result"}
+                  {uploading ? "Submitting..." : "Submit Result"}
                 </button>
               </>
             )}
@@ -673,7 +681,7 @@ export default function BattlePage() {
             <p className="text-zinc-400">
               {battleClosed
                 ? "Battle closed hai."
-                : "Room code save hone ke baad result upload option aayega."}
+                : "Room code save hone ke baad result submit option aayega."}
             </p>
           </section>
         )}
