@@ -6,6 +6,23 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
 
+type KycUpsertData = {
+  uid: string;
+  phone: string;
+  aadhaar_path?: string;
+  pan_path?: string;
+  status: string;
+  updated_at: string;
+};
+
+type UserUpdateData = {
+  aadhaar_path?: string;
+  aadhaar_url?: string;
+  pan_path?: string;
+  pan_url?: string;
+  kyc_status: string;
+};
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -59,7 +76,7 @@ export async function POST(req: Request) {
     }
 
     const ext = file.name.split(".").pop() || "jpg";
-    const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
     const filePath = `${uid}/${type}-${Date.now()}.${safeExt}`;
 
     const arrayBuffer = await file.arrayBuffer();
@@ -79,22 +96,30 @@ export async function POST(req: Request) {
       );
     }
 
-    const kycData =
-      type === "aadhaar"
-        ? {
-            uid,
-            phone,
-            aadhaar_path: filePath,
-            status: "pending",
-            updated_at: new Date().toISOString(),
-          }
-        : {
-            uid,
-            phone,
-            pan_path: filePath,
-            status: "pending",
-            updated_at: new Date().toISOString(),
-          };
+    const now = new Date().toISOString();
+
+    const kycData: KycUpsertData = {
+      uid,
+      phone,
+      status: "pending",
+      updated_at: now,
+    };
+
+    const userUpdate: UserUpdateData = {
+      kyc_status: "pending",
+    };
+
+    if (type === "aadhaar") {
+      kycData.aadhaar_path = filePath;
+      userUpdate.aadhaar_path = filePath;
+      userUpdate.aadhaar_url = filePath;
+    }
+
+    if (type === "pan") {
+      kycData.pan_path = filePath;
+      userUpdate.pan_path = filePath;
+      userUpdate.pan_url = filePath;
+    }
 
     const { error: kycError } = await supabaseAdmin
       .from("kyc")
@@ -106,19 +131,6 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
-
-    const userUpdate =
-      type === "aadhaar"
-        ? {
-            aadhaar_path: filePath,
-            aadhaar_url: filePath,
-            kyc_status: "pending",
-          }
-        : {
-            pan_path: filePath,
-            pan_url: filePath,
-            kyc_status: "pending",
-          };
 
     const { error: userError } = await supabaseAdmin
       .from("users")
