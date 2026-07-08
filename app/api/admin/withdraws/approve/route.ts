@@ -27,50 +27,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const { data: withdraw, error: withdrawError } = await supabaseAdmin
-      .from("withdraws")
-      .select("id, uid, amount, status")
-      .eq("id", Number(withdrawId))
-      .maybeSingle();
-
-    if (withdrawError) {
-      return NextResponse.json(
-        { success: false, message: withdrawError.message },
-        { status: 500 }
-      );
-    }
-
-    if (!withdraw) {
-      return NextResponse.json(
-        { success: false, message: "Withdraw not found" },
-        { status: 404 }
-      );
-    }
-
-    if (withdraw.status !== "pending") {
-      return NextResponse.json(
-        { success: false, message: "Withdraw already processed" },
-        { status: 409 }
-      );
-    }
-
-    if (Number(withdraw.amount) < 100) {
-      return NextResponse.json(
-        { success: false, message: "Minimum withdraw amount ₹100 hai" },
-        { status: 400 }
-      );
-    }
-
-    const { data, error } = await supabaseAdmin
-      .from("withdraws")
-      .update({
-        status: "approved",
-        wallet_type: "winning",
-      })
-      .eq("id", Number(withdrawId))
-      .eq("status", "pending")
-      .select("id")
-      .maybeSingle();
+    const { data, error } = await supabaseAdmin.rpc("approve_withdraw_safe", {
+      withdraw_id_input: Number(withdrawId),
+    });
 
     if (error) {
       return NextResponse.json(
@@ -79,10 +38,17 @@ export async function POST(req: Request) {
       );
     }
 
-    if (!data) {
+    if (data === "already_processed") {
       return NextResponse.json(
-        { success: false, message: "Withdraw already processed or not found" },
+        { success: false, message: "Withdraw already processed" },
         { status: 409 }
+      );
+    }
+
+    if (data === "not_found") {
+      return NextResponse.json(
+        { success: false, message: "Withdraw not found" },
+        { status: 404 }
       );
     }
 

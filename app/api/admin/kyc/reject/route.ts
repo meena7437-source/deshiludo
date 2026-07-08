@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isAdminLoggedIn } from "../../../../../lib/adminAuth";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,15 @@ const supabase = createClient(
 
 export async function POST(req: Request) {
   try {
+    const admin = await isAdminLoggedIn();
+
+    if (!admin) {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized admin" },
+        { status: 401 }
+      );
+    }
+
     const { uid } = await req.json();
 
     if (!uid) {
@@ -17,34 +27,28 @@ export async function POST(req: Request) {
       );
     }
 
-    const now = new Date().toISOString();
+    const { data, error } = await supabase.rpc("reject_kyc_safe", {
+      uid_input: uid,
+    });
 
-    const { error: kycError } = await supabase
-      .from("kyc")
-      .update({
-        status: "rejected",
-        updated_at: now,
-      })
-      .eq("uid", uid);
-
-    if (kycError) {
+    if (error) {
       return NextResponse.json(
-        { success: false, message: kycError.message },
+        { success: false, message: error.message },
         { status: 500 }
       );
     }
 
-    const { error: userError } = await supabase
-      .from("users")
-      .update({
-        kyc_status: "rejected",
-      })
-      .eq("firebase_uid", uid);
-
-    if (userError) {
+    if (data === "already_processed") {
       return NextResponse.json(
-        { success: false, message: userError.message },
-        { status: 500 }
+        { success: false, message: "KYC already processed" },
+        { status: 409 }
+      );
+    }
+
+    if (data === "not_found") {
+      return NextResponse.json(
+        { success: false, message: "KYC not found" },
+        { status: 404 }
       );
     }
 
