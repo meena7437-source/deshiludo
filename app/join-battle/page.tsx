@@ -81,56 +81,45 @@ export default function JoinBattlePage() {
       return;
     }
 
-    if (battle.creator_uid === user.uid) {
-      toast.error("Apni battle khud join nahi kar sakte");
-      return;
-    }
-
-    const battleAmount = Number(battle.amount || 0);
-
-    if (battleAmount <= 0) {
-      toast.error("Invalid battle amount");
-      return;
-    }
-
-    if (wallet < battleAmount) {
-      toast.error("Insufficient wallet balance");
-      return;
-    }
-
     setJoiningId(battle.id);
 
     try {
-      const { data: joinedBattle, error: joinError } = await supabase
-        .from("battles")
-        .update({
-          joiner_uid: user.uid,
-          joiner_phone: user.phoneNumber,
-          status: "matched",
-        })
-        .eq("id", battle.id)
-        .eq("status", "open")
-        .select("*")
-        .maybeSingle();
+      const { data, error } = await supabase.rpc("join_battle_safe", {
+        battle_id_input: battle.id,
+        joiner_uid_input: user.uid,
+        joiner_phone_input: user.phoneNumber || "User",
+      });
 
-      if (joinError) {
-        toast.error("Join error: " + joinError.message);
+      if (error) {
+        toast.error(error.message);
         return;
       }
 
-      if (!joinedBattle) {
+      if (data === "battle_not_found") {
+        toast.error("Battle nahi mili");
+        await loadPageData();
+        return;
+      }
+
+      if (data === "already_joined") {
         toast.error("Ye battle already kisi ne join kar li");
         await loadPageData();
         return;
       }
 
-      const { error: deductError } = await supabase.rpc("add_wallet_balance", {
-        user_id_input: user.uid,
-        amount_input: -battleAmount,
-      });
+      if (data === "own_battle") {
+        toast.error("Apni battle khud join nahi kar sakte");
+        return;
+      }
 
-      if (deductError) {
-        toast.error("Balance deduct error: " + deductError.message);
+      if (data === "wallet_not_found") {
+        toast.error("Wallet nahi mila");
+        return;
+      }
+
+      if (data === "low_balance") {
+        toast.error("Insufficient wallet balance");
+        await loadPageData();
         return;
       }
 

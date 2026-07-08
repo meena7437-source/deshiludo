@@ -50,35 +50,6 @@ export default function AdminDepositPage() {
     setDeposits(data || []);
   }
 
-  const stats = useMemo(() => {
-    return {
-      all: deposits.length,
-      pending: deposits.filter((d) => d.status === "pending").length,
-      approved: deposits.filter((d) => d.status === "approved").length,
-      rejected: deposits.filter((d) => d.status === "rejected").length,
-      approvedAmount: deposits
-        .filter((d) => d.status === "approved")
-        .reduce((sum, d) => sum + Number(d.amount || 0), 0),
-      pendingAmount: deposits
-        .filter((d) => d.status === "pending")
-        .reduce((sum, d) => sum + Number(d.amount || 0), 0),
-    };
-  }, [deposits]);
-
-  const filteredDeposits =
-    filter === "all"
-      ? deposits
-      : deposits.filter((deposit) => deposit.status === filter);
-
-  function statusClass(status: string) {
-    if (status === "approved")
-      return "border-green-500/30 bg-green-500/10 text-green-300";
-    if (status === "rejected")
-      return "border-red-500/30 bg-red-500/10 text-red-300";
-
-    return "border-yellow-400/30 bg-yellow-400/10 text-yellow-300";
-  }
-
   async function approveDeposit(deposit: any) {
     if (deposit.status !== "pending") {
       toast.error("Ye request already processed hai");
@@ -88,24 +59,21 @@ export default function AdminDepositPage() {
     setActionId(deposit.id);
 
     try {
-      const { error: walletError } = await supabase.rpc("add_wallet_balance", {
-        user_id_input: deposit.uid,
-        amount_input: Number(deposit.amount),
+      const res = await fetch("/api/admin/deposits/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          depositId: deposit.id,
+        }),
       });
 
-      if (walletError) {
-        toast.error(walletError.message);
-        return;
-      }
+      const result = await res.json();
 
-      const { error } = await supabase
-        .from("deposits")
-        .update({ status: "approved" })
-        .eq("id", deposit.id)
-        .eq("status", "pending");
-
-      if (error) {
-        toast.error(error.message);
+      if (!res.ok || !result.success) {
+        toast.error(result.message || "Approve failed");
+        await loadDeposits(false);
         return;
       }
 
@@ -149,6 +117,35 @@ export default function AdminDepositPage() {
     }
   }
 
+  const stats = useMemo(() => {
+    return {
+      all: deposits.length,
+      pending: deposits.filter((d) => d.status === "pending").length,
+      approved: deposits.filter((d) => d.status === "approved").length,
+      rejected: deposits.filter((d) => d.status === "rejected").length,
+      approvedAmount: deposits
+        .filter((d) => d.status === "approved")
+        .reduce((sum, d) => sum + Number(d.amount || 0), 0),
+      pendingAmount: deposits
+        .filter((d) => d.status === "pending")
+        .reduce((sum, d) => sum + Number(d.amount || 0), 0),
+    };
+  }, [deposits]);
+
+  const filteredDeposits =
+    filter === "all"
+      ? deposits
+      : deposits.filter((deposit) => deposit.status === filter);
+
+  function statusClass(status: string) {
+    if (status === "approved")
+      return "border-green-500/30 bg-green-500/10 text-green-300";
+    if (status === "rejected")
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+
+    return "border-yellow-400/30 bg-yellow-400/10 text-yellow-300";
+  }
+
   const filters = [
     { key: "all", label: "All", count: stats.all },
     { key: "pending", label: "Pending", count: stats.pending },
@@ -165,11 +162,9 @@ export default function AdminDepositPage() {
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-green-400">
                 Admin Payments
               </p>
-
               <h1 className="mt-2 text-3xl font-black text-white">
                 Deposit Requests
               </h1>
-
               <p className="mt-1 text-sm text-zinc-500">
                 User deposits approve ya reject karo.
               </p>

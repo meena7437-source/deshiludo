@@ -60,6 +60,80 @@ export default function AdminWithdrawsPage() {
     setWithdraws(data || []);
   }
 
+  async function approveWithdraw(withdraw: Withdraw) {
+    if (withdraw.status !== "pending") {
+      toast.error("Ye request already processed hai");
+      return;
+    }
+
+    setLoadingId(withdraw.id);
+
+    try {
+      const res = await fetch("/api/admin/withdraws/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          withdrawId: withdraw.id,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        toast.error(result.message || "Approve failed");
+        await loadWithdraws(false);
+        return;
+      }
+
+      toast.success("Withdraw Approved ✅");
+      await loadWithdraws(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || "Approve failed");
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
+  async function rejectWithdraw(withdraw: Withdraw) {
+    if (withdraw.status !== "pending") {
+      toast.error("Ye request already processed hai");
+      return;
+    }
+
+    setLoadingId(withdraw.id);
+
+    try {
+      const res = await fetch("/api/admin/withdraws/reject", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          withdrawId: withdraw.id,
+        }),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        toast.error(result.message || "Reject failed");
+        await loadWithdraws(false);
+        return;
+      }
+
+      toast.success("Withdraw Rejected ✅ Refund Done");
+      await loadWithdraws(false);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || "Reject failed");
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
   const stats = useMemo(() => {
     return {
       all: withdraws.length,
@@ -99,76 +173,6 @@ export default function AdminWithdrawsPage() {
       hour: "2-digit",
       minute: "2-digit",
     });
-  }
-
-  async function approveWithdraw(withdraw: Withdraw) {
-    if (withdraw.status !== "pending") {
-      toast.error("Ye request already processed hai");
-      return;
-    }
-
-    setLoadingId(withdraw.id);
-
-    try {
-      const { error } = await supabase
-        .from("withdraws")
-        .update({ status: "approved" })
-        .eq("id", withdraw.id)
-        .eq("status", "pending");
-
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-
-      toast.success("Withdraw Approved ✅");
-      await loadWithdraws(false);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || "Approve failed");
-    } finally {
-      setLoadingId(null);
-    }
-  }
-
-  async function rejectWithdraw(withdraw: Withdraw) {
-    if (withdraw.status !== "pending") {
-      toast.error("Ye request already processed hai");
-      return;
-    }
-
-    setLoadingId(withdraw.id);
-
-    try {
-      const { error: refundError } = await supabase.rpc("add_wallet_balance", {
-        user_id_input: withdraw.uid,
-        amount_input: Number(withdraw.amount),
-      });
-
-      if (refundError) {
-        toast.error(refundError.message);
-        return;
-      }
-
-      const { error: withdrawError } = await supabase
-        .from("withdraws")
-        .update({ status: "rejected" })
-        .eq("id", withdraw.id)
-        .eq("status", "pending");
-
-      if (withdrawError) {
-        toast.error(withdrawError.message);
-        return;
-      }
-
-      toast.success("Withdraw Rejected ✅ Refund Done");
-      await loadWithdraws(false);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || "Reject failed");
-    } finally {
-      setLoadingId(null);
-    }
   }
 
   const filters = [

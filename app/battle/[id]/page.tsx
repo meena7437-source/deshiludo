@@ -167,96 +167,55 @@ export default function BattlePage() {
     return auth.currentUser && battle?.joiner_uid === auth.currentUser.uid;
   }
 
-  async function updateWallet(uid: string, amount: number) {
-    const { error } = await supabase.rpc("add_wallet_balance", {
-      user_id_input: uid,
-      amount_input: amount,
+  async function autoSettleBattle() {
+    const { data, error } = await supabase.rpc("settle_battle_safe", {
+      battle_id_input: Number(battleId),
     });
 
-    if (error) throw error;
-  }
-
-  async function autoSettleBattle() {
-    const { data: latest, error } = await supabase
-      .from("battles")
-      .select("*")
-      .eq("id", battleId)
-      .maybeSingle();
-
-    if (error || !latest) return;
-
-    if (latest.status === "completed" || latest.status === "cancelled") return;
-
-    const creatorClaim = latest.creator_claim;
-    const joinerClaim = latest.joiner_claim;
-
-    if (!creatorClaim || !joinerClaim) return;
-
-    const amount = Number(latest.amount || 0);
-    const winningAmount = amount * 2;
-
-    let winnerUid = "";
-    let loserUid = "";
-
-    if (creatorClaim === "win" && joinerClaim === "lose") {
-      winnerUid = latest.creator_uid;
-      loserUid = latest.joiner_uid;
-    }
-
-    if (creatorClaim === "lose" && joinerClaim === "win") {
-      winnerUid = latest.joiner_uid;
-      loserUid = latest.creator_uid;
-    }
-
-    if (winnerUid && loserUid) {
-      const { data: updatedBattle, error: updateError } = await supabase
-        .from("battles")
-        .update({
-          status: "completed",
-          winner_uid: winnerUid,
-          loser_uid: loserUid,
-        })
-        .eq("id", battleId)
-        .not("status", "in", '("completed","cancelled")')
-        .select("*")
-        .maybeSingle();
-
-      if (updateError) {
-        toast.error(updateError.message);
-        return;
-      }
-
-      if (updatedBattle) {
-        await updateWallet(winnerUid, winningAmount);
-        toast.success("Auto Winner Done ✅");
-      }
-
+    if (error) {
+      toast.error(error.message);
       return;
     }
 
-    if (creatorClaim === "cancel" && joinerClaim === "cancel") {
-      const { data: updatedBattle, error: cancelError } = await supabase
-        .from("battles")
-        .update({
-          status: "cancelled",
-          winner_uid: null,
-          loser_uid: null,
-        })
-        .eq("id", battleId)
-        .not("status", "in", '("completed","cancelled")')
-        .select("*")
-        .maybeSingle();
+    if (data === "creator_won" || data === "joiner_won") {
+      toast.success("Winner payment done ✅");
+      await loadBattle(false);
+      return;
+    }
 
-      if (cancelError) {
-        toast.error(cancelError.message);
-        return;
-      }
+    if (data === "cancelled_refunded") {
+      toast.success("Battle cancelled ✅ Refund done");
+      await loadBattle(false);
+      return;
+    }
 
-      if (updatedBattle) {
-        await updateWallet(latest.creator_uid, amount);
-        await updateWallet(latest.joiner_uid, amount);
-        toast.success("Battle Cancelled ✅ Refund Done");
-      }
+    if (data === "waiting_claims") {
+      toast.success("Result uploaded ✅ Opponent ke result ka wait hai");
+      await loadBattle(false);
+      return;
+    }
+
+    if (data === "dispute") {
+      toast.success("Result uploaded ✅ Admin review required");
+      await loadBattle(false);
+      return;
+    }
+
+    if (data === "already_completed") {
+      toast.error("Battle already completed hai");
+      await loadBattle(false);
+      return;
+    }
+
+    if (data === "already_cancelled") {
+      toast.error("Battle already cancelled hai");
+      await loadBattle(false);
+      return;
+    }
+
+    if (data === "battle_not_found") {
+      toast.error("Battle nahi mili");
+      router.push("/battle-history");
     }
   }
 
@@ -283,7 +242,8 @@ export default function BattlePage() {
     const { error } = await supabase
       .from("battles")
       .update({ room_code: roomCode.trim(), status: "running" })
-      .eq("id", battleId);
+      .eq("id", battleId)
+      .not("status", "in", '("completed","cancelled")');
 
     setSavingRoom(false);
 
@@ -293,6 +253,7 @@ export default function BattlePage() {
     }
 
     toast.success("Room code save ho gaya ✅");
+    await loadBattle(false);
   }
 
   async function copyRoomCode() {
@@ -310,6 +271,11 @@ export default function BattlePage() {
 
     if (!user) {
       router.push("/login");
+      return;
+    }
+
+    if (!battle) {
+      toast.error("Battle load nahi hui");
       return;
     }
 
@@ -379,15 +345,16 @@ export default function BattlePage() {
       const { error: updateError } = await supabase
         .from("battles")
         .update(updateData)
-        .eq("id", battleId);
+        .eq("id", battleId)
+        .not("status", "in", '("completed","cancelled")');
 
       if (updateError) {
         toast.error(updateError.message);
         return;
       }
 
-      toast.success("Result uploaded successfully ✅");
       await autoSettleBattle();
+      setFile(null);
     } catch (err: any) {
       console.error(err);
       toast.error(err?.message || "Result upload failed");
@@ -397,10 +364,15 @@ export default function BattlePage() {
   }
 
   function statusClass(status: string) {
-    if (status === "open") return "bg-blue-500/15 text-blue-300 border-blue-500/30";
-    if (status === "running") return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
-    if (status === "completed") return "bg-green-500/15 text-green-300 border-green-500/30";
-    if (status === "cancelled") return "bg-red-500/15 text-red-300 border-red-500/30";
+    if (status === "open")
+      return "bg-blue-500/15 text-blue-300 border-blue-500/30";
+    if (status === "running")
+      return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
+    if (status === "completed")
+      return "bg-green-500/15 text-green-300 border-green-500/30";
+    if (status === "cancelled")
+      return "bg-red-500/15 text-red-300 border-red-500/30";
+
     return "bg-zinc-500/15 text-zinc-300 border-zinc-500/30";
   }
 
@@ -438,9 +410,7 @@ export default function BattlePage() {
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-400">
                 DeshiLudo Battle
               </p>
-              <h1 className="mt-2 text-3xl font-black">
-                Battle #{battleId}
-              </h1>
+              <h1 className="mt-2 text-3xl font-black">Battle #{battleId}</h1>
             </div>
 
             <span
@@ -473,11 +443,7 @@ export default function BattlePage() {
               <div>
                 <p className="text-xs text-zinc-500">You are</p>
                 <p className="font-bold">
-                  {isCreator()
-                    ? "Creator"
-                    : isJoiner()
-                    ? "Joiner"
-                    : "Viewer"}
+                  {isCreator() ? "Creator" : isJoiner() ? "Joiner" : "Viewer"}
                 </p>
               </div>
               <div className="text-right">
