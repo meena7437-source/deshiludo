@@ -28,10 +28,13 @@ export default function WithdrawPage() {
         return;
       }
 
-      setUid(user.uid);
-      setPhone(user.phoneNumber || "");
+      const userUid = user.uid;
+      const userPhone = user.phoneNumber || "";
 
-      await Promise.all([loadWallet(user.uid), loadKyc(user.uid)]);
+      setUid(userUid);
+      setPhone(userPhone);
+
+      await Promise.all([loadWallet(userUid), loadKyc(userUid, userPhone)]);
 
       setLoading(false);
     });
@@ -44,7 +47,7 @@ export default function WithdrawPage() {
       .from("wallets")
       .select("deposit_balance, winning_balance")
       .eq("uid", userId)
-      .single();
+      .maybeSingle();
 
     if (error) {
       toast.error("Wallet load nahi hua");
@@ -55,11 +58,18 @@ export default function WithdrawPage() {
     setWinningBalance(Number(data?.winning_balance || 0));
   }
 
-  async function loadKyc(userId: string) {
-    const { data, error } = await supabase
-      .from("kyc")
-      .select("status")
-      .eq("uid", userId)
+  async function loadKyc(userId: string, userPhone: string) {
+    let query = supabase.from("kyc").select("status, updated_at");
+
+    if (userPhone) {
+      query = query.or(`uid.eq.${userId},phone.eq.${userPhone}`);
+    } else {
+      query = query.eq("uid", userId);
+    }
+
+    const { data, error } = await query
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (error) {
