@@ -1,329 +1,254 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { onAuthStateChanged } from "firebase/auth";
 import toast from "react-hot-toast";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
 export default function DepositPage() {
   const router = useRouter();
 
-  const [user, setUser] = useState<any>(null);
-  const [deposits, setDeposits] = useState<any[]>([]);
-  const [amount, setAmount] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [pageLoading, setPageLoading] = useState(true);
-  const [loading, setLoading] = useState(false);
+  const [uid, setUid] = useState("");
+  const [phone, setPhone] = useState("");
+  const [depositBalance, setDepositBalance] = useState(0);
+  const [winningBalance, setWinningBalance] = useState(0);
 
-  const quickAmounts = [100, 200, 500, 1000, 2000, 5000];
+  const [amount, setAmount] = useState("");
+  const [utr, setUtr] = useState("");
+  const [screenshot, setScreenshot] = useState<File | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const upiId = "Q65123373@ybl";
+  const upiName = "Sher Singh Meena";
 
   useEffect(() => {
-    let channel: any = null;
-
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (!currentUser) {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
         router.push("/login");
         return;
       }
 
-      setUser(currentUser);
-      await loadDeposits(currentUser.uid);
-      setPageLoading(false);
-
-      channel = supabase
-        .channel(`deposit-history-realtime-${currentUser.uid}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "deposits",
-            filter: `uid=eq.${currentUser.uid}`,
-          },
-          async () => {
-            await loadDeposits(currentUser.uid);
-          }
-        )
-        .subscribe();
+      setUid(user.uid);
+      setPhone(user.phoneNumber || "");
+      await loadWallet(user.uid);
+      setLoading(false);
     });
 
-    return () => {
-      unsubscribe();
-      if (channel) supabase.removeChannel(channel);
-    };
+    return () => unsub();
   }, [router]);
 
-  async function loadDeposits(uid: string) {
-    const { data, error } = await supabase
-      .from("deposits")
-      .select("*")
-      .eq("uid", uid)
-      .order("id", { ascending: false });
+  async function loadWallet(userId: string) {
+    const { data } = await supabase
+      .from("users")
+      .select("deposit_balance, winning_balance")
+      .eq("uid", userId)
+      .single();
 
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
+    setDepositBalance(Number(data?.deposit_balance || 0));
+    setWinningBalance(Number(data?.winning_balance || 0));
+  }
 
-    setDeposits(data || []);
+  async function copyUpi() {
+    await navigator.clipboard.writeText(upiId);
+    toast.success("UPI ID copied");
   }
 
   async function submitDeposit() {
-    if (!user) {
-      router.push("/login");
-      return;
-    }
-
     const depositAmount = Number(amount);
 
-    if (!amount || depositAmount <= 0) {
-      toast.error("Amount sahi bharo");
+    if (!depositAmount || depositAmount < 10) {
+      toast.error("Minimum deposit ₹10 hai");
       return;
     }
 
-    if (depositAmount < 100) {
-      toast.error("Minimum deposit ₹100 hai");
+    if (!utr.trim()) {
+      toast.error("UTR number daalo");
       return;
     }
 
-    if (!file) {
-      toast.error("Payment screenshot select karo");
+    if (!screenshot) {
+      toast.error("Payment screenshot upload karo");
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
 
-    try {
-      const fileName = `deposit-${user.uid}-${Date.now()}.jpg`;
+    const fileName = `deposit-${uid}-${Date.now()}.jpg`;
 
-      const { error: uploadError } = await supabase.storage
-        .from("battle-screenshots")
-        .upload(fileName, file);
+    const { error: uploadError } = await supabase.storage
+      .from("screenshots")
+      .upload(fileName, screenshot);
 
-      if (uploadError) {
-        toast.error(uploadError.message);
-        return;
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from("battle-screenshots")
-        .getPublicUrl(fileName);
-
-      const { error } = await supabase.from("deposits").insert({
-        uid: user.uid,
-        amount: depositAmount,
-        screenshot: publicUrlData.publicUrl,
-        status: "pending",
-      });
-
-      if (error) {
-        toast.error(error.message);
-        return;
-      }
-
-      setAmount("");
-      setFile(null);
-
-      toast.success("Deposit request submit ho gayi ✅");
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || "Deposit submit failed");
-    } finally {
-      setLoading(false);
+    if (uploadError) {
+      setSubmitting(false);
+      toast.error("Screenshot upload failed");
+      return;
     }
+
+    const { data: urlData } = supabase.storage
+      .from("screenshots")
+      .getPublicUrl(fileName);
+
+    const { error } = await supabase.from("deposits").insert({
+      uid,
+      phone,
+      amount: depositAmount,
+      utr: utr.trim(),
+      screenshot_url: urlData.publicUrl,
+      status: "pending",
+    });
+
+    setSubmitting(false);
+
+    if (error) {
+      toast.error("Deposit request failed");
+      return;
+    }
+
+    toast.success("Deposit request submit ho gayi");
+    setAmount("");
+    setUtr("");
+    setScreenshot(null);
   }
 
-  function getStatusStyle(status: string) {
-    if (status === "approved") {
-      return "bg-green-500/10 text-green-300 border-green-500/30";
-    }
-
-    if (status === "rejected") {
-      return "bg-red-500/10 text-red-300 border-red-500/30";
-    }
-
-    return "bg-yellow-400/10 text-yellow-300 border-yellow-400/30";
-  }
-
-  if (pageLoading) {
+  if (loading) {
     return (
-      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
-          <p className="font-bold text-zinc-300">Loading deposit page...</p>
-        </div>
+      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+        <p className="text-yellow-400 font-bold">Loading Deposit...</p>
       </main>
     );
   }
 
+  const totalBalance = depositBalance + winningBalance;
+
   return (
-    <main className="min-h-screen bg-[#07070b] text-white">
-      <div className="mx-auto max-w-xl px-4 py-5">
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="mb-5 rounded-full border border-zinc-800 bg-zinc-950 px-4 py-2 text-sm font-bold text-zinc-300"
-        >
-          ← Dashboard
-        </button>
+    <main className="min-h-screen bg-black text-white p-3">
+      <div className="max-w-xl mx-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-2xl font-black text-yellow-400">Deposit</h1>
 
-        <section className="mb-5 rounded-[28px] border border-green-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
-          <p className="text-xs font-bold uppercase tracking-[0.25em] text-green-400">
-            Wallet Recharge
-          </p>
+          <Link href="/dashboard">
+            <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs">
+              Back
+            </button>
+          </Link>
+        </div>
 
-          <h1 className="mt-2 text-3xl font-black text-white">Add Money</h1>
-
-          <p className="mt-1 text-sm text-zinc-500">
-            UPI payment karo aur screenshot upload karo.
-          </p>
-
-          <div className="mt-5 rounded-2xl border border-yellow-400/30 bg-yellow-400/10 p-4">
-            <p className="text-xs font-bold uppercase tracking-widest text-yellow-300">
-              Payment Details
-            </p>
-
-            <div className="mt-3 rounded-2xl border border-yellow-400/20 bg-black/60 p-4">
-              <p className="text-sm text-zinc-400">UPI ID</p>
-              <p className="mt-1 break-all text-2xl font-black text-yellow-400">
-                yourupi@upi
-              </p>
-            </div>
-
-            <p className="mt-3 text-xs leading-5 text-zinc-400">
-              Is UPI ID par payment karne ke baad screenshot upload karo.
-              Admin approve karega to wallet me balance add ho jayega.
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
+            <p className="text-[10px] text-zinc-400">Deposit</p>
+            <p className="text-lg font-black text-yellow-400">
+              ₹{depositBalance}
             </p>
           </div>
-        </section>
 
-        <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
-          <h2 className="text-xl font-black text-yellow-400">
-            Deposit Amount
-          </h2>
+          <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
+            <p className="text-[10px] text-zinc-400">Winning</p>
+            <p className="text-lg font-black text-green-400">
+              ₹{winningBalance}
+            </p>
+          </div>
+
+          <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
+            <p className="text-[10px] text-zinc-400">Total</p>
+            <p className="text-lg font-black text-white">₹{totalBalance}</p>
+          </div>
+        </div>
+
+        <div className="bg-yellow-400/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
+          <p className="text-sm font-bold text-yellow-400">
+            🎁 First Deposit Bonus 5%
+          </p>
+          <p className="text-[11px] text-zinc-400">
+            First deposit par hi bonus milega.
+          </p>
+        </div>
+
+        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3">
+          <label className="text-xs text-zinc-400">Amount</label>
 
           <input
             type="number"
-            placeholder="Amount enter karo"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className="mt-4 w-full rounded-2xl border border-zinc-800 bg-black p-4 text-white outline-none focus:border-yellow-400"
+            placeholder="Amount daalo"
+            className="w-full mt-1 mb-2 p-2.5 rounded-lg bg-black border border-zinc-700 text-white outline-none text-sm"
           />
 
-          <div className="mt-4 grid grid-cols-3 gap-3">
-            {quickAmounts.map((value) => (
+          <div className="grid grid-cols-5 gap-2 mb-3">
+            {[100, 200, 500, 1000, 2000].map((amt) => (
               <button
-                key={value}
-                onClick={() => setAmount(String(value))}
-                className={`rounded-2xl border py-4 font-black ${
-                  Number(amount) === value
-                    ? "border-yellow-400 bg-yellow-400 text-black"
-                    : "border-zinc-800 bg-black text-zinc-300"
-                }`}
+                key={amt}
+                onClick={() => setAmount(String(amt))}
+                className="bg-zinc-800 text-yellow-400 rounded-lg text-xs font-bold"
               >
-                ₹{value}
+                ₹{amt}
               </button>
             ))}
           </div>
-        </section>
 
-        <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
-          <h2 className="text-xl font-black text-yellow-400">
-            Payment Screenshot
-          </h2>
-
-          <label className="mt-4 block rounded-2xl border border-dashed border-zinc-700 bg-black p-5 text-center">
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-              className="hidden"
-            />
-
-            <p className="font-black text-zinc-200">
-              {file ? file.name : "Tap to select screenshot"}
+          <div className="bg-black border border-zinc-800 rounded-xl p-3 mb-3">
+            <p className="text-xs text-zinc-400 mb-2">
+              Pay using any UPI App
             </p>
 
-            <p className="mt-1 text-xs text-zinc-500">
-              Payment proof required
-            </p>
-          </label>
-        </section>
+            <div className="mb-2">
+              <p className="text-[11px] text-zinc-500">UPI ID</p>
 
-        <button
-          onClick={submitDeposit}
-          disabled={loading}
-          className="w-full rounded-2xl bg-green-500 py-4 font-black text-white shadow-lg shadow-green-500/20 disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-[0.99]"
-        >
-          {loading ? "Submitting..." : "Submit Deposit Request"}
-        </button>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <p className="text-sm font-bold text-white break-all">
+                  {upiId}
+                </p>
 
-        <p className="mt-4 text-center text-xs text-zinc-500">
-          Minimum deposit ₹100 hai. Approval ke baad balance wallet me add hoga.
-        </p>
-
-        <section className="mt-8">
-          <div className="mb-4 flex items-end justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
-                Realtime
-              </p>
-              <h2 className="mt-1 text-2xl font-black">Deposit History</h2>
+                <button
+                  onClick={copyUpi}
+                  className="bg-yellow-400 text-black px-3 py-1 rounded-lg text-xs font-black"
+                >
+                  Copy
+                </button>
+              </div>
             </div>
 
-            <span className="rounded-full border border-zinc-800 bg-zinc-950 px-3 py-1 text-xs font-bold text-zinc-400">
-              {deposits.length} Requests
-            </span>
+            <div>
+              <p className="text-[11px] text-zinc-500">Account Holder</p>
+              <p className="text-sm font-bold text-green-400">{upiName}</p>
+            </div>
+
+            <p className="text-[11px] text-zinc-500 mt-3">
+              Payment complete karne ke baad UTR Number aur Screenshot upload
+              karke Deposit Request submit karein.
+            </p>
           </div>
 
-          {deposits.length === 0 ? (
-            <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
-              <p className="font-black">No deposit request</p>
-              <p className="mt-1 text-sm text-zinc-500">
-                Abhi koi deposit request nahi hai.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {deposits.map((deposit) => (
-                <div
-                  key={deposit.id}
-                  className="rounded-[24px] border border-zinc-800 bg-zinc-950 p-4 shadow-xl shadow-black/30"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-bold text-zinc-500">
-                        Deposit #{deposit.id}
-                      </p>
-                      <p className="mt-1 text-3xl font-black text-green-400">
-                        ₹{deposit.amount}
-                      </p>
-                    </div>
+          <label className="text-xs text-zinc-400">UTR Number</label>
+          <input
+            value={utr}
+            onChange={(e) => setUtr(e.target.value)}
+            placeholder="12 digit UTR"
+            className="w-full mt-1 mb-3 p-2.5 rounded-lg bg-black border border-zinc-700 text-white outline-none text-sm"
+          />
 
-                    <span
-                      className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusStyle(
-                        deposit.status
-                      )}`}
-                    >
-                      {deposit.status}
-                    </span>
-                  </div>
+          <label className="text-xs text-zinc-400">Payment Screenshot</label>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setScreenshot(e.target.files?.[0] || null)}
+            className="w-full mt-1 mb-3 p-2 rounded-lg bg-black border border-zinc-700 text-white text-xs"
+          />
 
-                  {deposit.screenshot && (
-                    <a
-                      href={deposit.screenshot}
-                      target="_blank"
-                      className="mt-4 block w-full rounded-2xl border border-zinc-800 bg-black py-3 text-center font-black text-blue-400"
-                    >
-                      View Screenshot
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+          <button
+            onClick={submitDeposit}
+            disabled={submitting}
+            className="w-full bg-yellow-400 text-black py-2.5 rounded-lg font-black text-sm disabled:opacity-50"
+          >
+            {submitting ? "Submitting..." : "Submit Deposit"}
+          </button>
+        </div>
       </div>
     </main>
   );

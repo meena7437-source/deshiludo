@@ -132,7 +132,7 @@ export default function LoginPage() {
           className="w-full bg-yellow-400 disabled:opacity-60 text-black font-bold py-3 rounded-lg mb-4"
         >
           {sending ? "Sending..." : "Send OTP"}
-        </button>
+     ē   </button>
 
         <input
           type="text"

@@ -1,135 +1,190 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { signOut } from "firebase/auth";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
 export default function ProfilePage() {
   const router = useRouter();
-  const [wallet, setWallet] = useState(0);
+
+  const [uid, setUid] = useState("");
+  const [phone, setPhone] = useState("");
+  const [depositBalance, setDepositBalance] = useState(0);
+  const [winningBalance, setWinningBalance] = useState(0);
+  const [referralCode, setReferralCode] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const user = auth.currentUser;
-
   useEffect(() => {
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        router.push("/login");
+        return;
+      }
 
-    loadWallet();
+      setUid(user.uid);
+      setPhone(user.phoneNumber || "");
+      await loadProfile(user.uid, user.phoneNumber || "");
+      setLoading(false);
+    });
 
-    const channel = supabase
-      .channel(`profile-wallet-${user.uid}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "wallets",
-          filter: `uid=eq.${user.uid}`,
-        },
-        () => loadWallet()
-      )
-      .subscribe();
+    return () => unsub();
+  }, [router]);
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
+  function makeReferralCode(userPhone: string, userId: string) {
+    const cleanPhone = userPhone.replace(/\D/g, "");
+    const last4 = cleanPhone.slice(-4) || userId.slice(0, 4).toUpperCase();
+    return `DL${last4}`;
+  }
 
-  async function loadWallet() {
-    if (!user) return;
-
+  async function loadProfile(userId: string, userPhone: string) {
     const { data, error } = await supabase
-      .from("wallets")
-      .select("balance")
-      .eq("uid", user.uid)
-      .maybeSingle();
-
-    setLoading(false);
+      .from("users")
+      .select("deposit_balance, winning_balance, referral_code")
+      .eq("uid", userId)
+      .single();
 
     if (error) {
-      toast.error(error.message);
+      toast.error("Profile load nahi hua");
       return;
     }
 
-    setWallet(Number(data?.balance || 0));
+    let code = data?.referral_code;
+
+    if (!code) {
+      code = makeReferralCode(userPhone, userId);
+
+      await supabase
+        .from("users")
+        .update({ referral_code: code })
+        .eq("uid", userId);
+    }
+
+    setDepositBalance(Number(data?.deposit_balance || 0));
+    setWinningBalance(Number(data?.winning_balance || 0));
+    setReferralCode(code);
+  }
+
+  async function copyReferral() {
+    await navigator.clipboard.writeText(referralCode);
+    toast.success("Referral code copied");
   }
 
   async function logout() {
     await signOut(auth);
+    localStorage.removeItem("deshiludo_admin");
     router.push("/login");
   }
 
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+        <p className="text-yellow-400 font-bold">Loading Profile...</p>
+      </main>
+    );
+  }
+
+  const totalBalance = depositBalance + winningBalance;
+
   return (
-    <main className="min-h-screen bg-black text-white px-4 py-6">
-      <div className="mx-auto max-w-xl">
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="mb-5 text-sm font-bold text-zinc-400"
-        >
-          ← Back to Dashboard
-        </button>
+    <main className="min-h-screen bg-black text-white p-3">
+      <div className="max-w-xl mx-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h1 className="text-2xl font-black text-yellow-400">Profile</h1>
 
-        <div className="rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-900 to-black p-5 shadow-xl">
-          <div className="mb-6 text-center">
-            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-yellow-400 text-4xl font-black text-black">
-              👤
-            </div>
+          <Link href="/dashboard">
+            <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs">
+              Back
+            </button>
+          </Link>
+        </div>
 
-            <h1 className="mt-4 text-3xl font-black text-yellow-400">
-              My Profile
-            </h1>
+        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
+          <p className="text-xs text-zinc-400">Mobile Number</p>
+          <p className="text-lg font-black text-white">{phone || "User"}</p>
 
-            <p className="mt-1 text-sm text-zinc-400">
-              DeshiLudo Player Account
+          <p className="text-[10px] text-zinc-600 mt-1 break-all">
+            UID: {uid}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
+            <p className="text-[10px] text-zinc-400">Deposit</p>
+            <p className="text-lg font-black text-yellow-400">
+              ₹{depositBalance}
             </p>
           </div>
 
-          <div className="space-y-4">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs text-zinc-500">Mobile Number</p>
-              <p className="mt-2 text-xl font-bold">
-                {user?.phoneNumber || "User"}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs text-zinc-500">Wallet Balance</p>
-              <p className="mt-2 text-3xl font-black text-green-400">
-                {loading ? "..." : `₹${wallet}`}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs text-zinc-500">Account Status</p>
-              <p className="mt-2 font-bold text-green-400">✅ Active</p>
-            </div>
-
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
-              <p className="text-xs text-zinc-500">Login Method</p>
-              <p className="mt-2 font-bold">Firebase OTP</p>
-            </div>
+          <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
+            <p className="text-[10px] text-zinc-400">Winning</p>
+            <p className="text-lg font-black text-green-400">
+              ₹{winningBalance}
+            </p>
           </div>
 
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="mt-6 w-full rounded-2xl bg-yellow-400 py-4 font-black text-black"
-          >
-            Back to Dashboard
-          </button>
-
-          <button
-            onClick={logout}
-            className="mt-3 w-full rounded-2xl border border-red-500/40 bg-red-500/10 py-4 font-black text-red-400"
-          >
-            Logout
-          </button>
+          <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
+            <p className="text-[10px] text-zinc-400">Total</p>
+            <p className="text-lg font-black text-white">₹{totalBalance}</p>
+          </div>
         </div>
+
+        <div className="bg-yellow-400/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
+          <p className="text-xs text-zinc-400">Referral Code</p>
+
+          <div className="flex items-center justify-between gap-2 mt-1">
+            <p className="text-xl font-black text-yellow-400">
+              {referralCode}
+            </p>
+
+            <button
+              onClick={copyReferral}
+              className="bg-yellow-400 text-black px-3 py-1 rounded-lg text-xs font-black"
+            >
+              Copy
+            </button>
+          </div>
+
+          <p className="text-[11px] text-zinc-500 mt-2">
+            Friends ko invite karo aur reward earn karo.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <Link href="/deposit">
+            <button className="w-full bg-yellow-400 text-black rounded-lg font-black text-sm">
+              Deposit
+            </button>
+          </Link>
+
+          <Link href="/withdraw">
+            <button className="w-full bg-green-500 text-black rounded-lg font-black text-sm">
+              Withdraw
+            </button>
+          </Link>
+
+          <Link href="/history">
+            <button className="w-full bg-zinc-800 text-white rounded-lg font-bold text-sm">
+              History
+            </button>
+          </Link>
+
+          <Link href="/dashboard">
+            <button className="w-full bg-zinc-800 text-white rounded-lg font-bold text-sm">
+              Dashboard
+            </button>
+          </Link>
+        </div>
+
+        <button
+          onClick={logout}
+          className="w-full bg-red-600 text-white rounded-lg font-black text-sm"
+        >
+          Logout
+        </button>
       </div>
     </main>
   );
