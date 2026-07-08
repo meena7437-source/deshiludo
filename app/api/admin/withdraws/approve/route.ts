@@ -27,9 +27,46 @@ export async function POST(req: Request) {
       );
     }
 
+    const { data: withdraw, error: withdrawError } = await supabaseAdmin
+      .from("withdraws")
+      .select("id, uid, amount, status")
+      .eq("id", Number(withdrawId))
+      .maybeSingle();
+
+    if (withdrawError) {
+      return NextResponse.json(
+        { success: false, message: withdrawError.message },
+        { status: 500 }
+      );
+    }
+
+    if (!withdraw) {
+      return NextResponse.json(
+        { success: false, message: "Withdraw not found" },
+        { status: 404 }
+      );
+    }
+
+    if (withdraw.status !== "pending") {
+      return NextResponse.json(
+        { success: false, message: "Withdraw already processed" },
+        { status: 409 }
+      );
+    }
+
+    if (Number(withdraw.amount) < 100) {
+      return NextResponse.json(
+        { success: false, message: "Minimum withdraw amount ₹100 hai" },
+        { status: 400 }
+      );
+    }
+
     const { data, error } = await supabaseAdmin
       .from("withdraws")
-      .update({ status: "approved" })
+      .update({
+        status: "approved",
+        wallet_type: "winning",
+      })
       .eq("id", Number(withdrawId))
       .eq("status", "pending")
       .select("id")

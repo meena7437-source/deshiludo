@@ -67,30 +67,12 @@ export default function BattlePage() {
             ) {
               toast.success("Battle cancel ho gayi, refund done ✅");
             }
-
-            if (
-              updatedBattle.creator_uid === user.uid &&
-              !oldBattle.joiner_result_uploaded &&
-              updatedBattle.joiner_result_uploaded
-            ) {
-              toast("Opponent ne result screenshot upload kar diya 🔔");
-            }
-
-            if (
-              updatedBattle.joiner_uid === user.uid &&
-              !oldBattle.creator_result_uploaded &&
-              updatedBattle.creator_result_uploaded
-            ) {
-              toast("Opponent ne result screenshot upload kar diya 🔔");
-            }
           }
 
           lastBattleRef.current = updatedBattle;
           setBattle(updatedBattle);
 
-          if (updatedBattle.room_code) {
-            setRoomCode(updatedBattle.room_code);
-          }
+          if (updatedBattle.room_code) setRoomCode(updatedBattle.room_code);
 
           if (user) {
             if (
@@ -165,6 +147,25 @@ export default function BattlePage() {
 
   function isJoiner() {
     return auth.currentUser && battle?.joiner_uid === auth.currentUser.uid;
+  }
+
+  function myResultUploaded() {
+    if (!battle) return false;
+    if (isCreator()) return !!battle.creator_result_uploaded;
+    if (isJoiner()) return !!battle.joiner_result_uploaded;
+    return false;
+  }
+
+  function getWinningAmount() {
+    const amount = Number(battle?.amount || 0);
+    const totalPot = amount * 2;
+    const commission = Math.floor(totalPot * 0.1);
+    return totalPot - commission;
+  }
+
+  function getCommission() {
+    const amount = Number(battle?.amount || 0);
+    return Math.floor(amount * 2 * 0.1);
   }
 
   async function autoSettleBattle() {
@@ -284,13 +285,18 @@ export default function BattlePage() {
       return;
     }
 
-    if (!battle?.room_code) {
+    if (!battle.room_code) {
       toast.error("Room code save hone ke baad result upload hoga");
       return;
     }
 
     if (!isCreator() && !isJoiner()) {
       toast.error("Aap is battle ke player nahi ho");
+      return;
+    }
+
+    if (myResultUploaded()) {
+      toast.error("Aap result already upload kar chuke ho");
       return;
     }
 
@@ -307,7 +313,8 @@ export default function BattlePage() {
     setUploading(true);
 
     try {
-      const filePath = `battle-${battleId}/${user.uid}-${Date.now()}-${file.name}`;
+      const safeFileName = file.name.replaceAll(" ", "-");
+      const filePath = `battle-${battleId}/${user.uid}-${Date.now()}-${safeFileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("battle-results")
@@ -366,6 +373,8 @@ export default function BattlePage() {
   function statusClass(status: string) {
     if (status === "open")
       return "bg-blue-500/15 text-blue-300 border-blue-500/30";
+    if (status === "matched")
+      return "bg-purple-500/15 text-purple-300 border-purple-500/30";
     if (status === "running")
       return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
     if (status === "completed")
@@ -374,6 +383,14 @@ export default function BattlePage() {
       return "bg-red-500/15 text-red-300 border-red-500/30";
 
     return "bg-zinc-500/15 text-zinc-300 border-zinc-500/30";
+  }
+
+  function claimBadge(value: string | null) {
+    if (!value) return "Not uploaded";
+    if (value === "win") return "Win Claim";
+    if (value === "lose") return "Lose Claim";
+    if (value === "cancel") return "Cancel Claim";
+    return value;
   }
 
   if (loading) {
@@ -401,6 +418,12 @@ export default function BattlePage() {
   const battleClosed =
     battle.status === "completed" || battle.status === "cancelled";
 
+  const adminReview =
+    battle.creator_result_uploaded &&
+    battle.joiner_result_uploaded &&
+    battle.status !== "completed" &&
+    battle.status !== "cancelled";
+
   return (
     <main className="min-h-screen bg-[#07070b] text-white">
       <div className="mx-auto max-w-xl px-4 py-5">
@@ -422,18 +445,51 @@ export default function BattlePage() {
             </span>
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-4">
-              <p className="text-xs text-zinc-500">Entry Amount</p>
-              <p className="mt-1 text-2xl font-black text-green-400">
+          <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-3">
+              <p className="text-xs text-zinc-500">Entry</p>
+              <p className="mt-1 text-xl font-black text-green-400">
                 ₹{battle.amount}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-4">
+            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-3">
               <p className="text-xs text-zinc-500">Winning</p>
-              <p className="mt-1 text-2xl font-black text-yellow-400">
-                ₹{Number(battle.amount || 0) * 2}
+              <p className="mt-1 text-xl font-black text-yellow-400">
+                ₹{getWinningAmount()}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-3">
+              <p className="text-xs text-zinc-500">Fee</p>
+              <p className="mt-1 text-xl font-black text-red-400">
+                ₹{getCommission()}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
+              <p className="text-xs text-zinc-500">Creator</p>
+              <p className="mt-1 font-bold text-white">Player 1</p>
+              <p className="mt-2 text-xs text-zinc-400">
+                {battle.creator_result_uploaded
+                  ? claimBadge(battle.creator_claim)
+                  : "Waiting result"}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
+              <p className="text-xs text-zinc-500">Joiner</p>
+              <p className="mt-1 font-bold text-white">
+                {battle.joiner_uid ? "Player 2" : "Waiting..."}
+              </p>
+              <p className="mt-2 text-xs text-zinc-400">
+                {battle.joiner_result_uploaded
+                  ? claimBadge(battle.joiner_claim)
+                  : battle.joiner_uid
+                  ? "Waiting result"
+                  : "Not joined"}
               </p>
             </div>
           </div>
@@ -454,6 +510,18 @@ export default function BattlePage() {
               </div>
             </div>
           </div>
+
+          {adminReview && (
+            <div className="mt-4 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4">
+              <p className="font-bold text-yellow-300">
+                Admin Review Required ⚠️
+              </p>
+              <p className="mt-1 text-xs text-zinc-400">
+                Dono players ne result upload kar diya hai. Admin decision
+                required.
+              </p>
+            </div>
+          )}
 
           {battle.status === "completed" && (
             <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/10 p-4">
@@ -549,48 +617,56 @@ export default function BattlePage() {
               </div>
             )}
 
-            <div className="mt-5 grid grid-cols-3 gap-2">
-              {["win", "lose", "cancel"].map((item) => (
+            {myResultUploaded() ? (
+              <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-300">
+                Aap result already upload kar chuke ho ✅
+              </div>
+            ) : (
+              <>
+                <div className="mt-5 grid grid-cols-3 gap-2">
+                  {["win", "lose", "cancel"].map((item) => (
+                    <button
+                      key={item}
+                      onClick={() => setClaim(item)}
+                      className={`rounded-2xl py-4 text-sm font-black uppercase ${
+                        claim === item
+                          ? item === "win"
+                            ? "bg-green-500 text-white"
+                            : item === "lose"
+                            ? "bg-red-500 text-white"
+                            : "bg-yellow-400 text-black"
+                          : "border border-zinc-800 bg-black text-zinc-400"
+                      }`}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+
+                <label className="mt-4 block rounded-2xl border border-dashed border-zinc-700 bg-black p-4 text-center">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                  />
+                  <p className="font-bold text-zinc-200">
+                    {file ? file.name : "Tap to select screenshot"}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Image proof required
+                  </p>
+                </label>
+
                 <button
-                  key={item}
-                  onClick={() => setClaim(item)}
-                  className={`rounded-2xl py-4 text-sm font-black uppercase ${
-                    claim === item
-                      ? item === "win"
-                        ? "bg-green-500 text-white"
-                        : item === "lose"
-                        ? "bg-red-500 text-white"
-                        : "bg-yellow-400 text-black"
-                      : "border border-zinc-800 bg-black text-zinc-400"
-                  }`}
+                  onClick={submitResult}
+                  disabled={uploading || !userIsPlayer}
+                  className="mt-4 w-full rounded-2xl bg-green-500 py-4 font-black text-white shadow-lg shadow-green-500/20 disabled:bg-zinc-800 disabled:text-zinc-500"
                 >
-                  {item}
+                  {uploading ? "Uploading..." : "Upload Result"}
                 </button>
-              ))}
-            </div>
-
-            <label className="mt-4 block rounded-2xl border border-dashed border-zinc-700 bg-black p-4 text-center">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                className="hidden"
-              />
-              <p className="font-bold text-zinc-200">
-                {file ? file.name : "Tap to select screenshot"}
-              </p>
-              <p className="mt-1 text-xs text-zinc-500">
-                Image proof required
-              </p>
-            </label>
-
-            <button
-              onClick={submitResult}
-              disabled={uploading || !userIsPlayer}
-              className="mt-4 w-full rounded-2xl bg-green-500 py-4 font-black text-white shadow-lg shadow-green-500/20 disabled:bg-zinc-800 disabled:text-zinc-500"
-            >
-              {uploading ? "Uploading..." : "Upload Result"}
-            </button>
+              </>
+            )}
           </section>
         ) : (
           <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">

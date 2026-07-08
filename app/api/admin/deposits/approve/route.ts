@@ -45,10 +45,24 @@ export async function POST(req: Request) {
       );
     }
 
+    if (data === "minimum_deposit_100") {
+      return NextResponse.json(
+        { success: false, message: "Minimum deposit amount ₹100 hai" },
+        { status: 400 }
+      );
+    }
+
     if (data === "not_found") {
       return NextResponse.json(
         { success: false, message: "Deposit not found" },
         { status: 404 }
+      );
+    }
+
+    if (data !== "approved") {
+      return NextResponse.json(
+        { success: false, message: "Deposit approve nahi hua" },
+        { status: 400 }
       );
     }
 
