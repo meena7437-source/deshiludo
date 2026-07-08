@@ -130,46 +130,28 @@ export default function ProfilePage() {
       if (type === "aadhaar") setUploadingAadhaar(true);
       if (type === "pan") setUploadingPan(true);
 
-      const ext = file.name.split(".").pop();
-      const filePath = `${uid}/${type}-${Date.now()}.${ext}`;
+      const formData = new FormData();
+      formData.append("uid", uid);
+      formData.append("type", type);
+      formData.append("file", file);
 
-      const { error: uploadError } = await supabase.storage
-        .from("kyc-documents")
-        .upload(filePath, file, {
-          cacheControl: "3600",
-          upsert: true,
-        });
+      const res = await fetch("/api/kyc/upload", {
+        method: "POST",
+        body: formData,
+      });
 
-      if (uploadError) {
-        toast.error(uploadError.message);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        toast.error(result.message || "Upload failed");
         return;
       }
 
-      const { data: publicData } = supabase.storage
-        .from("kyc-documents")
-        .getPublicUrl(filePath);
-
-      const url = publicData.publicUrl;
-
-      const updateData =
-        type === "aadhaar"
-          ? { aadhaar_url: url, kyc_status: "pending" }
-          : { pan_url: url, kyc_status: "pending" };
-
-      const { error: updateError } = await supabase
-        .from("users")
-        .update(updateData)
-        .eq("firebase_uid", uid);
-
-      if (updateError) {
-        toast.error(updateError.message);
-        return;
-      }
-
-      if (type === "aadhaar") setAadhaarUrl(url);
-      if (type === "pan") setPanUrl(url);
+      if (type === "aadhaar") setAadhaarUrl(result.path);
+      if (type === "pan") setPanUrl(result.path);
 
       setKycStatus("pending");
+
       toast.success(
         type === "aadhaar"
           ? "Aadhaar upload ho gaya"
@@ -304,13 +286,7 @@ export default function ProfilePage() {
               </p>
 
               {aadhaarUrl ? (
-                <a
-                  href={aadhaarUrl}
-                  target="_blank"
-                  className="text-xs text-blue-400 underline"
-                >
-                  View uploaded Aadhaar
-                </a>
+                <p className="text-xs text-green-400">Aadhaar uploaded ✅</p>
               ) : (
                 <p className="text-xs text-zinc-500 mb-2">
                   Aadhaar upload nahi hai.
@@ -336,13 +312,7 @@ export default function ProfilePage() {
               <p className="text-sm font-bold text-zinc-300 mb-2">PAN Card</p>
 
               {panUrl ? (
-                <a
-                  href={panUrl}
-                  target="_blank"
-                  className="text-xs text-blue-400 underline"
-                >
-                  View uploaded PAN
-                </a>
+                <p className="text-xs text-green-400">PAN uploaded ✅</p>
               ) : (
                 <p className="text-xs text-zinc-500 mb-2">
                   PAN card upload nahi hai.
