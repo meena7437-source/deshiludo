@@ -43,12 +43,15 @@ export default function AdminDepositPage() {
       .from("battle-screenshots")
       .createSignedUrl(path, 60 * 60);
 
-    if (error) {
-      console.error(error);
-      return "";
+    if (!error && data?.signedUrl) {
+      return data.signedUrl;
     }
 
-    return data?.signedUrl || "";
+    const { data: publicData } = supabase.storage
+      .from("battle-screenshots")
+      .getPublicUrl(path);
+
+    return publicData.publicUrl || "";
   }
 
   async function loadDeposits(showLoader = true) {
@@ -309,19 +312,13 @@ export default function AdminDepositPage() {
                       </p>
                     )}
 
-                    {deposit.phone && (
-                      <p className="mt-2 text-sm text-zinc-400">
-                        Phone: {deposit.phone}
-                      </p>
-                    )}
-
                     {deposit.created_at && (
                       <p className="mt-2 text-xs text-zinc-500">
                         Date: {new Date(deposit.created_at).toLocaleString()}
                       </p>
                     )}
 
-                    {deposit.screenshot_url && (
+                    {deposit.screenshot && (
                       <a
                         href={deposit.screenshot_url}
                         target="_blank"
