@@ -18,6 +18,7 @@ export default function AdminDashboardPage() {
     totalWithdraws: 0,
     pendingDeposits: 0,
     pendingWithdraws: 0,
+    pendingKyc: 0,
   });
 
   useEffect(() => {
@@ -25,9 +26,26 @@ export default function AdminDashboardPage() {
 
     const channel = supabase
       .channel("admin-dashboard-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "battles" }, () => loadStats())
-      .on("postgres_changes", { event: "*", schema: "public", table: "deposits" }, () => loadStats())
-      .on("postgres_changes", { event: "*", schema: "public", table: "withdraws" }, () => loadStats())
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "battles" },
+        () => loadStats()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "deposits" },
+        () => loadStats()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "withdraws" },
+        () => loadStats()
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "users" },
+        () => loadStats()
+      )
       .subscribe();
 
     return () => {
@@ -36,22 +54,65 @@ export default function AdminDashboardPage() {
   }, []);
 
   async function loadStats() {
-    const { data: wallets } = await supabase.from("wallets").select("balance");
-    const { data: users } = await supabase.from("users").select("id");
+    const { data: wallets } = await supabase
+      .from("wallets")
+      .select("deposit_balance, winning_balance");
+
+    const { data: users } = await supabase
+      .from("users")
+      .select("id, kyc_status, aadhaar_url, pan_url");
+
     const { data: battles } = await supabase.from("battles").select("status");
-    const { data: deposits } = await supabase.from("deposits").select("amount,status");
-    const { data: withdraws } = await supabase.from("withdraws").select("amount,status");
+
+    const { data: deposits } = await supabase
+      .from("deposits")
+      .select("amount,status");
+
+    const { data: withdraws } = await supabase
+      .from("withdraws")
+      .select("amount,status");
 
     setStats({
       totalUsers: users?.length || 0,
-      totalWallet: wallets?.reduce((sum, w: any) => sum + Number(w.balance || 0), 0) || 0,
+
+      totalWallet:
+        wallets?.reduce(
+          (sum: number, w: any) =>
+            sum +
+            Number(w.deposit_balance || 0) +
+            Number(w.winning_balance || 0),
+          0
+        ) || 0,
+
       totalBattles: battles?.length || 0,
-      openBattles: battles?.filter((b: any) => b.status === "open").length || 0,
-      completedBattles: battles?.filter((b: any) => b.status === "completed").length || 0,
-      totalDeposits: deposits?.filter((d: any) => d.status === "approved").reduce((sum, d: any) => sum + Number(d.amount || 0), 0) || 0,
-      totalWithdraws: withdraws?.filter((w: any) => w.status === "approved").reduce((sum, w: any) => sum + Number(w.amount || 0), 0) || 0,
-      pendingDeposits: deposits?.filter((d: any) => d.status === "pending").length || 0,
-      pendingWithdraws: withdraws?.filter((w: any) => w.status === "pending").length || 0,
+
+      openBattles:
+        battles?.filter((b: any) => b.status === "open").length || 0,
+
+      completedBattles:
+        battles?.filter((b: any) => b.status === "completed").length || 0,
+
+      totalDeposits:
+        deposits
+          ?.filter((d: any) => d.status === "approved")
+          .reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) || 0,
+
+      totalWithdraws:
+        withdraws
+          ?.filter((w: any) => w.status === "approved")
+          .reduce((sum: number, w: any) => sum + Number(w.amount || 0), 0) || 0,
+
+      pendingDeposits:
+        deposits?.filter((d: any) => d.status === "pending").length || 0,
+
+      pendingWithdraws:
+        withdraws?.filter((w: any) => w.status === "pending").length || 0,
+
+      pendingKyc:
+        users?.filter(
+          (u: any) =>
+            u.kyc_status === "pending" && (u.aadhaar_url || u.pan_url)
+        ).length || 0,
     });
   }
 
@@ -84,6 +145,12 @@ export default function AdminDashboardPage() {
       href: "/admin/withdraws",
       color: "border-red-500/30 bg-red-500/10 text-red-300",
     },
+    {
+      title: "KYC Requests",
+      desc: `${stats.pendingKyc} pending KYC`,
+      href: "/admin/kyc",
+      color: "border-purple-500/30 bg-purple-500/10 text-purple-300",
+    },
   ];
 
   const cards = [
@@ -96,6 +163,7 @@ export default function AdminDashboardPage() {
     ["🏧", "Withdraws", `₹${stats.totalWithdraws}`, "text-red-300"],
     ["⏳", "Pending Deposits", stats.pendingDeposits, "text-yellow-300"],
     ["⚠️", "Pending Withdraws", stats.pendingWithdraws, "text-red-300"],
+    ["🪪", "Pending KYC", stats.pendingKyc, "text-purple-300"],
   ];
 
   return (
@@ -113,7 +181,7 @@ export default function AdminDashboardPage() {
               </h1>
 
               <p className="mt-1 text-sm text-zinc-500">
-                Live stats, payments aur battles management.
+                Live stats, payments, KYC aur battles management.
               </p>
             </div>
 
@@ -142,7 +210,7 @@ export default function AdminDashboardPage() {
           </div>
         </section>
 
-        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
           {mainActions.map((item) => (
             <Link
               key={item.href}
@@ -156,11 +224,14 @@ export default function AdminDashboardPage() {
           ))}
         </section>
 
-        {(stats.pendingDeposits > 0 || stats.pendingWithdraws > 0) && (
+        {(stats.pendingDeposits > 0 ||
+          stats.pendingWithdraws > 0 ||
+          stats.pendingKyc > 0) && (
           <section className="mb-6 rounded-[24px] border border-yellow-400/30 bg-yellow-400/10 p-4">
             <p className="font-black text-yellow-300">Pending Alert ⚠️</p>
             <p className="mt-1 text-sm text-zinc-300">
-              {stats.pendingDeposits} deposit aur {stats.pendingWithdraws} withdraw request approval ke liye pending hai.
+              {stats.pendingDeposits} deposit, {stats.pendingWithdraws} withdraw
+              aur {stats.pendingKyc} KYC request pending hai.
             </p>
           </section>
         )}
