@@ -88,11 +88,16 @@ export default function DashboardPage() {
   }, [router]);
 
   async function loadWallet(userId: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("wallets")
       .select("deposit_balance, winning_balance")
       .eq("uid", userId)
-      .single();
+      .maybeSingle();
+
+    if (error) {
+      toast.error("Wallet load nahi hua");
+      return;
+    }
 
     setDepositBalance(Number(data?.deposit_balance || 0));
     setWinningBalance(Number(data?.winning_balance || 0));
