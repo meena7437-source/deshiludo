@@ -131,9 +131,7 @@ export default function DashboardPage() {
 
       const res = await fetch("/api/battles/join", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           battleId,
           uid: user.uid,
@@ -174,28 +172,7 @@ export default function DashboardPage() {
       });
 
       if (error) {
-        const retry = await supabase.rpc("cancel_battle_safe", {
-          battle_id_input: battleId,
-        });
-
-        if (retry.error) {
-          toast.error(retry.error.message);
-          return;
-        }
-
-        if (
-          retry.data === "cancelled_refunded" ||
-          retry.data === "cancelled"
-        ) {
-          toast.success("Battle cancel ho gayi, refund done ✅");
-          await loadBattles();
-          await loadWallet(user.uid);
-          return;
-        }
-
-        toast.success("Battle cancel request done ✅");
-        await loadBattles();
-        await loadWallet(user.uid);
+        toast.error(error.message);
         return;
       }
 
@@ -229,56 +206,58 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-black text-white pb-20">
-      <header className="sticky top-0 z-20 bg-black/95 backdrop-blur border-b border-yellow-500/30 px-3 py-3">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
+      <header className="sticky top-0 z-20 bg-black/95 backdrop-blur border-b border-yellow-500/30 px-3 py-2">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
           <div>
             <h1 className="text-xl font-black text-yellow-400 leading-none">
               DeshiLudo
             </h1>
-            <p className="text-[11px] text-zinc-400 mt-1">{phone}</p>
+            <p className="text-[10px] text-zinc-400 mt-1">{phone}</p>
           </div>
 
-          <div className="text-right">
-            <p className="text-[11px] text-zinc-400">Total Balance</p>
-            <p className="text-lg font-black text-green-400">
-              ₹{totalBalance}
-            </p>
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <p className="text-[10px] text-zinc-400">Balance</p>
+              <p className="text-base font-black text-green-400">
+                ₹{totalBalance}
+              </p>
+            </div>
+
+            <Link href="/profile">
+              <button className="rounded-lg bg-yellow-400 text-black px-3 py-2 text-xs font-black">
+                Profile
+              </button>
+            </Link>
           </div>
         </div>
       </header>
 
-      <section className="max-w-3xl mx-auto px-3 pt-4">
-        <div className="grid grid-cols-3 gap-2 mb-4">
+      <section className="max-w-3xl mx-auto px-3 pt-3">
+        <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3">
-            <p className="text-[11px] text-green-300">Deposit</p>
+            <p className="text-[10px] text-green-300">Deposit</p>
             <p className="text-lg font-black text-green-400">
               ₹{depositBalance}
             </p>
           </div>
 
           <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3">
-            <p className="text-[11px] text-yellow-300">Winning</p>
+            <p className="text-[10px] text-yellow-300">Winning</p>
             <p className="text-lg font-black text-yellow-400">
               ₹{winningBalance}
             </p>
           </div>
 
           <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
-            <p className="text-[11px] text-zinc-400">Total</p>
+            <p className="text-[10px] text-zinc-400">Total</p>
             <p className="text-lg font-black text-white">₹{totalBalance}</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-2 mb-4">
+        <div className="grid grid-cols-3 gap-2 mb-3">
           <Link href="/create-battle">
             <button className="w-full rounded-xl bg-yellow-400 text-black py-2 text-xs font-black">
               Create
-            </button>
-          </Link>
-
-          <Link href="/wallet">
-            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
-              Wallet
             </button>
           </Link>
 
@@ -291,6 +270,24 @@ export default function DashboardPage() {
           <Link href="/withdraw">
             <button className="w-full rounded-xl bg-zinc-900 border border-red-700/50 text-red-400 py-2 text-xs font-bold">
               Withdraw
+            </button>
+          </Link>
+
+          <Link href="/wallet">
+            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
+              Wallet
+            </button>
+          </Link>
+
+          <Link href="/profile">
+            <button className="w-full rounded-xl bg-zinc-900 border border-yellow-500/50 text-yellow-400 py-2 text-xs font-bold">
+              Profile
+            </button>
+          </Link>
+
+          <Link href="/battle-history">
+            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
+              History
             </button>
           </Link>
         </div>
@@ -314,7 +311,9 @@ export default function DashboardPage() {
 
         {openBattles.length === 0 ? (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center mb-4">
-            <p className="text-zinc-400 text-sm">Abhi koi open battle nahi hai.</p>
+            <p className="text-zinc-400 text-sm">
+              Abhi koi open battle nahi hai.
+            </p>
             <Link href="/create-battle">
               <button className="mt-4 bg-yellow-400 text-black px-5 py-2 rounded-xl text-sm font-black">
                 First Battle Create Karo
@@ -405,7 +404,9 @@ export default function DashboardPage() {
 
         {liveBattles.length === 0 ? (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
-            <p className="text-zinc-500 text-sm">Abhi koi live battle nahi hai.</p>
+            <p className="text-zinc-500 text-sm">
+              Abhi koi live battle nahi hai.
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -448,7 +449,7 @@ export default function DashboardPage() {
         )}
 
         <div className="mt-5 grid grid-cols-2 gap-2">
-          <Link href="/my-battles">
+          <Link href="/battle-history">
             <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
               My Battles
             </button>
