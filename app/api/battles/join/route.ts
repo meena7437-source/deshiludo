@@ -9,7 +9,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          message: "Battle ID aur user ID required hai",
+          message: "Invalid request",
         },
         { status: 400 }
       );
@@ -17,8 +17,8 @@ export async function POST(req: Request) {
 
     const { data, error } = await supabase.rpc("join_battle_safe", {
       battle_id_input: Number(battleId),
+      joiner_phone_input: phone || "Player",
       joiner_uid_input: uid,
-      joiner_name_input: phone || "Player",
     });
 
     if (error) {
@@ -31,44 +31,69 @@ export async function POST(req: Request) {
       );
     }
 
-    if (
-      data === "battle_not_found" ||
-      data === "battle_not_open" ||
-      data === "already_joined" ||
-      data === "cannot_join_own_battle" ||
-      data === "insufficient_balance" ||
-      data === "invalid_amount"
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            data === "battle_not_found"
-              ? "Battle nahi mili"
-              : data === "battle_not_open"
-              ? "Ye battle ab open nahi hai"
-              : data === "already_joined"
-              ? "Battle already joined hai"
-              : data === "cannot_join_own_battle"
-              ? "Apni battle khud join nahi kar sakte"
-              : data === "insufficient_balance"
-              ? "Wallet balance kam hai"
-              : "Invalid battle amount",
-        },
-        { status: 400 }
-      );
-    }
+    switch (data) {
+      case "joined":
+        return NextResponse.json({
+          success: true,
+          message: "Battle joined successfully",
+        });
 
-    return NextResponse.json({
-      success: true,
-      message: "Battle joined successfully",
-      result: data,
-    });
+      case "battle_not_found":
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Battle not found",
+          },
+          { status: 400 }
+        );
+
+      case "battle_not_open":
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Battle is not open",
+          },
+          { status: 400 }
+        );
+
+      case "cannot_join_own_battle":
+        return NextResponse.json(
+          {
+            success: false,
+            message: "You cannot join your own battle",
+          },
+          { status: 400 }
+        );
+
+      case "already_joined":
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Battle already joined",
+          },
+          { status: 400 }
+        );
+
+      case "insufficient_balance":
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Insufficient balance",
+          },
+          { status: 400 }
+        );
+
+      default:
+        return NextResponse.json({
+          success: true,
+          message: data,
+        });
+    }
   } catch (err: any) {
     return NextResponse.json(
       {
         success: false,
-        message: err?.message || "Join battle failed",
+        message: err.message || "Internal Server Error",
       },
       { status: 500 }
     );
