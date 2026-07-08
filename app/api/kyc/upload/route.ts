@@ -11,6 +11,7 @@ export async function POST(req: Request) {
     const formData = await req.formData();
 
     const uid = String(formData.get("uid") || "");
+    const phone = String(formData.get("phone") || "");
     const type = String(formData.get("type") || "");
     const file = formData.get("file") as File | null;
 
@@ -58,7 +59,8 @@ export async function POST(req: Request) {
     }
 
     const ext = file.name.split(".").pop() || "jpg";
-    const filePath = `${uid}/${type}-${Date.now()}.${ext}`;
+    const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const filePath = `${uid}/${type}-${Date.now()}.${safeExt}`;
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -77,7 +79,35 @@ export async function POST(req: Request) {
       );
     }
 
-    const updateData =
+    const kycData =
+      type === "aadhaar"
+        ? {
+            uid,
+            phone,
+            aadhaar_path: filePath,
+            status: "pending",
+            updated_at: new Date().toISOString(),
+          }
+        : {
+            uid,
+            phone,
+            pan_path: filePath,
+            status: "pending",
+            updated_at: new Date().toISOString(),
+          };
+
+    const { error: kycError } = await supabaseAdmin
+      .from("kyc")
+      .upsert(kycData, { onConflict: "uid" });
+
+    if (kycError) {
+      return NextResponse.json(
+        { success: false, message: kycError.message },
+        { status: 500 }
+      );
+    }
+
+    const userUpdate =
       type === "aadhaar"
         ? {
             aadhaar_path: filePath,
@@ -90,14 +120,14 @@ export async function POST(req: Request) {
             kyc_status: "pending",
           };
 
-    const { error: updateError } = await supabaseAdmin
+    const { error: userError } = await supabaseAdmin
       .from("users")
-      .update(updateData)
+      .update(userUpdate)
       .eq("firebase_uid", uid);
 
-    if (updateError) {
+    if (userError) {
       return NextResponse.json(
-        { success: false, message: updateError.message },
+        { success: false, message: userError.message },
         { status: 500 }
       );
     }

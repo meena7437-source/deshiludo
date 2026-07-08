@@ -9,6 +9,7 @@ export default function AdminKycPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [filter, setFilter] = useState("pending");
 
   useEffect(() => {
@@ -18,7 +19,7 @@ export default function AdminKycPage() {
       .channel("admin-kyc-realtime")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "users" },
+        { event: "*", schema: "public", table: "kyc" },
         async () => {
           await loadUsers(false);
         }
@@ -34,10 +35,9 @@ export default function AdminKycPage() {
     if (showLoader) setLoading(true);
 
     const { data, error } = await supabase
-      .from("users")
-      .select("id, firebase_uid, phone, aadhaar_url, pan_url, kyc_status")
-      .or("aadhaar_url.not.is.null,pan_url.not.is.null")
-      .order("id", { ascending: false });
+      .from("kyc")
+      .select("id, uid, phone, aadhaar_path, pan_path, status, updated_at")
+      .order("updated_at", { ascending: false });
 
     if (showLoader) setLoading(false);
 
@@ -49,29 +49,70 @@ export default function AdminKycPage() {
     setUsers(data || []);
   }
 
+  async function openDocument(path: string, key: string) {
+    if (!path) {
+      toast.error("Document path missing");
+      return;
+    }
+
+    setViewingId(key);
+
+    try {
+      const res = await fetch("/api/admin/kyc/signed-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ path }),
+      });
+
+      const data = await res.json();
+
+      if (!data?.success || !data?.url) {
+        toast.error(data?.message || "Signed URL failed");
+        return;
+      }
+
+      window.open(data.url, "_blank");
+    } catch (err: any) {
+      toast.error(err?.message || "Document open failed");
+    } finally {
+      setViewingId(null);
+    }
+  }
+
   async function updateKyc(user: any, status: "approved" | "rejected") {
-    if (!user?.firebase_uid) {
+    if (!user?.uid) {
       toast.error("User UID missing");
       return;
     }
 
-    setActionId(user.firebase_uid);
+    setActionId(user.uid);
 
     try {
-      const { error } = await supabase
-        .from("users")
-        .update({ kyc_status: status })
-        .eq("firebase_uid", user.firebase_uid);
+      const apiUrl =
+        status === "approved"
+          ? "/api/admin/kyc/approve"
+          : "/api/admin/kyc/reject";
 
-      if (error) {
-        toast.error(error.message);
+      const res = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uid: user.uid }),
+      });
+
+      const data = await res.json();
+
+      if (!data?.success) {
+        toast.error(data?.message || "KYC update failed");
         return;
       }
 
-      toast.success(status === "approved" ? "KYC approved" : "KYC rejected");
+      toast.success(data.message);
       await loadUsers(false);
     } catch (err: any) {
-      console.error(err);
       toast.error(err?.message || "KYC update failed");
     } finally {
       setActionId(null);
@@ -81,14 +122,14 @@ export default function AdminKycPage() {
   const stats = useMemo(() => {
     return {
       all: users.length,
-      pending: users.filter((u) => u.kyc_status === "pending").length,
-      approved: users.filter((u) => u.kyc_status === "approved").length,
-      rejected: users.filter((u) => u.kyc_status === "rejected").length,
+      pending: users.filter((u) => u.status === "pending").length,
+      approved: users.filter((u) => u.status === "approved").length,
+      rejected: users.filter((u) => u.status === "rejected").length,
     };
   }, [users]);
 
   const filteredUsers =
-    filter === "all" ? users : users.filter((u) => u.kyc_status === filter);
+    filter === "all" ? users : users.filter((u) => u.status === filter);
 
   const filters = [
     { key: "pending", label: "Pending", count: stats.pending },
@@ -121,7 +162,7 @@ export default function AdminKycPage() {
               </h1>
 
               <p className="mt-1 text-xs text-zinc-500">
-                Aadhaar aur PAN documents verify karo.
+                Aadhaar aur PAN private signed URL se verify karo.
               </p>
             </div>
 
@@ -195,7 +236,7 @@ export default function AdminKycPage() {
           <div className="space-y-3">
             {filteredUsers.map((user) => (
               <div
-                key={user.firebase_uid || user.id}
+                key={user.uid || user.id}
                 className="rounded-[22px] border border-zinc-800 bg-zinc-950 p-4 shadow-xl shadow-black/30"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -207,40 +248,51 @@ export default function AdminKycPage() {
 
                       <span
                         className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${statusClass(
-                          user.kyc_status
+                          user.status
                         )}`}
                       >
-                        {user.kyc_status || "pending"}
+                        {user.status || "pending"}
                       </span>
                     </div>
 
                     <p className="mt-2 break-all text-[11px] text-zinc-500">
-                      UID: {user.firebase_uid}
+                      UID: {user.uid}
                     </p>
 
                     <div className="mt-3 flex flex-wrap gap-2">
-                      {user.aadhaar_url ? (
-                        <a
-                          href={user.aadhaar_url}
-                          target="_blank"
-                          className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-xs font-black text-blue-300"
+                      {user.aadhaar_path ? (
+                        <button
+                          onClick={() =>
+                            openDocument(
+                              user.aadhaar_path,
+                              `${user.uid}-aadhaar`
+                            )
+                          }
+                          disabled={viewingId === `${user.uid}-aadhaar`}
+                          className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-xs font-black text-blue-300 disabled:opacity-50"
                         >
-                          View Aadhaar
-                        </a>
+                          {viewingId === `${user.uid}-aadhaar`
+                            ? "Opening..."
+                            : "View Aadhaar"}
+                        </button>
                       ) : (
                         <span className="rounded-xl border border-zinc-800 bg-black px-4 py-2 text-xs font-bold text-zinc-500">
                           Aadhaar Missing
                         </span>
                       )}
 
-                      {user.pan_url ? (
-                        <a
-                          href={user.pan_url}
-                          target="_blank"
-                          className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-xs font-black text-blue-300"
+                      {user.pan_path ? (
+                        <button
+                          onClick={() =>
+                            openDocument(user.pan_path, `${user.uid}-pan`)
+                          }
+                          disabled={viewingId === `${user.uid}-pan`}
+                          className="rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-xs font-black text-blue-300 disabled:opacity-50"
                         >
-                          View PAN
-                        </a>
+                          {viewingId === `${user.uid}-pan`
+                            ? "Opening..."
+                            : "View PAN"}
+                        </button>
                       ) : (
                         <span className="rounded-xl border border-zinc-800 bg-black px-4 py-2 text-xs font-bold text-zinc-500">
                           PAN Missing
@@ -252,18 +304,18 @@ export default function AdminKycPage() {
                   <div className="grid grid-cols-2 gap-2 sm:w-60">
                     <button
                       onClick={() => updateKyc(user, "approved")}
-                      disabled={actionId === user.firebase_uid}
+                      disabled={actionId === user.uid}
                       className="rounded-xl bg-green-500 py-3 text-sm font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
                     >
-                      {actionId === user.firebase_uid ? "..." : "Approve"}
+                      {actionId === user.uid ? "..." : "Approve"}
                     </button>
 
                     <button
                       onClick={() => updateKyc(user, "rejected")}
-                      disabled={actionId === user.firebase_uid}
+                      disabled={actionId === user.uid}
                       className="rounded-xl bg-red-500 py-3 text-sm font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
                     >
-                      {actionId === user.firebase_uid ? "..." : "Reject"}
+                      {actionId === user.uid ? "..." : "Reject"}
                     </button>
                   </div>
                 </div>
