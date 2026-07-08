@@ -34,19 +34,24 @@ export default function AdminKycPage() {
   async function loadUsers(showLoader = true) {
     if (showLoader) setLoading(true);
 
-    const { data, error } = await supabase
-      .from("kyc")
-      .select("id, uid, phone, aadhaar_path, pan_path, status, updated_at")
-      .order("updated_at", { ascending: false });
+    try {
+      const res = await fetch("/api/admin/kyc/list", {
+        cache: "no-store",
+      });
 
-    if (showLoader) setLoading(false);
+      const data = await res.json();
 
-    if (error) {
-      toast.error(error.message);
-      return;
+      if (!data?.success) {
+        toast.error(data?.message || "KYC load failed");
+        return;
+      }
+
+      setUsers(data.users || []);
+    } catch (err: any) {
+      toast.error(err?.message || "KYC load failed");
+    } finally {
+      if (showLoader) setLoading(false);
     }
-
-    setUsers(data || []);
   }
 
   async function openDocument(path: string, key: string) {
@@ -150,17 +155,15 @@ export default function AdminKycPage() {
   return (
     <main className="min-h-screen bg-[#07070b] text-white">
       <div className="mx-auto max-w-5xl px-3 py-4">
-        <section className="mb-4 rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-4 shadow-2xl shadow-black/50">
+        <section className="mb-4 rounded-[24px] border border-purple-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-purple-400">
                 Admin Verification
               </p>
-
               <h1 className="mt-2 text-2xl font-black text-white">
                 KYC Requests
               </h1>
-
               <p className="mt-1 text-xs text-zinc-500">
                 Aadhaar aur PAN private signed URL se verify karo.
               </p>
@@ -168,7 +171,7 @@ export default function AdminKycPage() {
 
             <button
               onClick={() => loadUsers()}
-              className="rounded-xl bg-yellow-400 px-4 py-2 text-xs font-black text-black active:scale-95"
+              className="rounded-xl bg-yellow-400 px-4 py-2 text-xs font-black text-black"
             >
               Refresh
             </button>
@@ -181,21 +184,18 @@ export default function AdminKycPage() {
                 {stats.pending}
               </p>
             </div>
-
             <div className="rounded-xl border border-green-500/20 bg-green-500/10 p-3">
               <p className="text-[10px] text-green-300">Approved</p>
               <p className="mt-1 text-xl font-black text-green-400">
                 {stats.approved}
               </p>
             </div>
-
             <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
               <p className="text-[10px] text-red-300">Rejected</p>
               <p className="mt-1 text-xl font-black text-red-400">
                 {stats.rejected}
               </p>
             </div>
-
             <div className="rounded-xl border border-zinc-800 bg-black/60 p-3">
               <p className="text-[10px] text-zinc-500">Total</p>
               <p className="mt-1 text-xl font-black text-white">
@@ -223,7 +223,6 @@ export default function AdminKycPage() {
 
         {loading ? (
           <div className="rounded-[24px] border border-zinc-800 bg-zinc-950 p-6 text-center">
-            <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
             <p className="font-bold text-zinc-300">Loading KYC...</p>
           </div>
         ) : filteredUsers.length === 0 ? (
@@ -237,7 +236,7 @@ export default function AdminKycPage() {
             {filteredUsers.map((user) => (
               <div
                 key={user.uid || user.id}
-                className="rounded-[22px] border border-zinc-800 bg-zinc-950 p-4 shadow-xl shadow-black/30"
+                className="rounded-[22px] border border-zinc-800 bg-zinc-950 p-4"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -305,7 +304,7 @@ export default function AdminKycPage() {
                     <button
                       onClick={() => updateKyc(user, "approved")}
                       disabled={actionId === user.uid}
-                      className="rounded-xl bg-green-500 py-3 text-sm font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
+                      className="rounded-xl bg-green-500 py-3 text-sm font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500"
                     >
                       {actionId === user.uid ? "..." : "Approve"}
                     </button>
@@ -313,7 +312,7 @@ export default function AdminKycPage() {
                     <button
                       onClick={() => updateKyc(user, "rejected")}
                       disabled={actionId === user.uid}
-                      className="rounded-xl bg-red-500 py-3 text-sm font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500 active:scale-95"
+                      className="rounded-xl bg-red-500 py-3 text-sm font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500"
                     >
                       {actionId === user.uid ? "..." : "Reject"}
                     </button>
@@ -325,7 +324,7 @@ export default function AdminKycPage() {
         )}
 
         <Link href="/admin">
-          <button className="mt-5 w-full rounded-xl border border-zinc-800 bg-zinc-950 py-3 text-sm font-black text-zinc-300 active:scale-95">
+          <button className="mt-5 w-full rounded-xl border border-zinc-800 bg-zinc-950 py-3 text-sm font-black text-zinc-300">
             Back to Admin
           </button>
         </Link>
