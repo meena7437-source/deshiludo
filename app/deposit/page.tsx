@@ -12,7 +12,6 @@ export default function DepositPage() {
   const router = useRouter();
 
   const [uid, setUid] = useState("");
-  const [phone, setPhone] = useState("");
   const [depositBalance, setDepositBalance] = useState(0);
   const [winningBalance, setWinningBalance] = useState(0);
 
@@ -34,7 +33,6 @@ export default function DepositPage() {
       }
 
       setUid(user.uid);
-      setPhone(user.phoneNumber || "");
       await loadWallet(user.uid);
       setLoading(false);
     });
@@ -65,6 +63,11 @@ export default function DepositPage() {
 
   async function submitDeposit() {
     const depositAmount = Number(amount);
+
+    if (!uid) {
+      toast.error("Login session missing");
+      return;
+    }
 
     if (!depositAmount || depositAmount < 100) {
       toast.error("Minimum deposit ₹100 hai");
@@ -101,7 +104,6 @@ export default function DepositPage() {
 
       const { error } = await supabase.from("deposits").insert({
         uid,
-        phone,
         amount: depositAmount,
         utr: utr.trim(),
         screenshot: fileName,
@@ -117,6 +119,8 @@ export default function DepositPage() {
       setAmount("");
       setUtr("");
       setScreenshot(null);
+
+      await loadWallet(uid);
     } catch (err: any) {
       console.error(err);
       toast.error(err?.message || "Deposit request failed");
