@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   title: "DeshiLudo",
   description: "Play Ludo Battles and Win Real Cash",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -22,7 +27,6 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <PWARegister />
-
         {children}
 
         <Toaster
