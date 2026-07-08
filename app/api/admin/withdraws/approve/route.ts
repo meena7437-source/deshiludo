@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       .eq("id", Number(withdrawId))
       .eq("status", "pending")
       .select("id")
-      .single();
+      .maybeSingle();
 
     if (error) {
       return NextResponse.json(

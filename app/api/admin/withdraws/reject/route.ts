@@ -13,7 +13,10 @@ export async function POST(req: Request) {
 
     if (!admin) {
       return NextResponse.json(
-        { success: false, message: "Unauthorized admin" },
+        {
+          success: false,
+          message: "Unauthorized admin",
+        },
         { status: 401 }
       );
     }
@@ -22,43 +25,61 @@ export async function POST(req: Request) {
 
     if (!withdrawId) {
       return NextResponse.json(
-        { success: false, message: "Withdraw ID missing" },
+        {
+          success: false,
+          message: "Withdraw ID missing",
+        },
         { status: 400 }
       );
     }
 
-    const { data, error } = await supabaseAdmin.rpc("reject_withdraw_safe", {
-      withdraw_id_input: Number(withdrawId),
-    });
+    const { data, error } = await supabaseAdmin.rpc(
+      "reject_withdraw_safe",
+      {
+        withdraw_id_input: Number(withdrawId),
+      }
+    );
 
     if (error) {
       return NextResponse.json(
-        { success: false, message: error.message },
+        {
+          success: false,
+          message: error.message,
+        },
         { status: 500 }
       );
     }
 
     if (data === "already_processed") {
       return NextResponse.json(
-        { success: false, message: "Withdraw already processed" },
+        {
+          success: false,
+          message: "Withdraw already processed",
+        },
         { status: 409 }
       );
     }
 
     if (data === "not_found") {
       return NextResponse.json(
-        { success: false, message: "Withdraw not found" },
+        {
+          success: false,
+          message: "Withdraw not found",
+        },
         { status: 404 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      message: "Withdraw rejected and refunded successfully",
+      message: "Withdraw rejected and refund completed successfully",
     });
   } catch (error: any) {
     return NextResponse.json(
-      { success: false, message: error?.message || "Server error" },
+      {
+        success: false,
+        message: error?.message || "Server error",
+      },
       { status: 500 }
     );
   }
