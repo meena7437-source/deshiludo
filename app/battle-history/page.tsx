@@ -69,18 +69,28 @@ export default function BattleHistoryPage() {
     setBattles(data || []);
   }
 
+  function getNetWinning(amount: number) {
+    const totalPot = Number(amount || 0) * 2;
+    const commission = Math.floor(totalPot * 0.1);
+    return totalPot - commission;
+  }
+
   const stats = useMemo(() => {
     const total = battles.length;
+
     const wins = battles.filter(
       (b) => b.status === "completed" && b.winner_uid === currentUid
     ).length;
+
     const losses = battles.filter(
       (b) => b.status === "completed" && b.winner_uid !== currentUid
     ).length;
+
     const cancelled = battles.filter((b) => b.status === "cancelled").length;
+
     const winning = battles
       .filter((b) => b.status === "completed" && b.winner_uid === currentUid)
-      .reduce((sum, b) => sum + Number(b.amount || 0) * 2, 0);
+      .reduce((sum, b) => sum + getNetWinning(Number(b.amount || 0)), 0);
 
     return { total, wins, losses, cancelled, winning };
   }, [battles, currentUid]);
@@ -196,7 +206,7 @@ export default function BattleHistoryPage() {
             </div>
 
             <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
-              <p className="text-xs text-zinc-500">Total Winning</p>
+              <p className="text-xs text-zinc-500">Total Net Winning</p>
               <p className="mt-1 text-2xl font-black text-green-400">
                 ₹{stats.winning}
               </p>
@@ -295,7 +305,7 @@ export default function BattleHistoryPage() {
                       </p>
 
                       <p className="mt-1 text-xs text-zinc-500">
-                        Winning ₹{Number(battle.amount || 0) * 2}
+                        Net Winning ₹{getNetWinning(Number(battle.amount || 0))}
                       </p>
                     </div>
 
