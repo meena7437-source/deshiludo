@@ -32,6 +32,25 @@ export default function AdminDepositPage() {
     };
   }, []);
 
+  async function getSignedScreenshot(path: string) {
+    if (!path) return "";
+
+    if (path.startsWith("http")) {
+      return path;
+    }
+
+    const { data, error } = await supabase.storage
+      .from("battle-screenshots")
+      .createSignedUrl(path, 60 * 60);
+
+    if (error) {
+      console.error(error);
+      return "";
+    }
+
+    return data?.signedUrl || "";
+  }
+
   async function loadDeposits(showLoader = true) {
     if (showLoader) setLoading(true);
 
@@ -40,14 +59,28 @@ export default function AdminDepositPage() {
       .select("*")
       .order("id", { ascending: false });
 
-    if (showLoader) setLoading(false);
-
     if (error) {
+      if (showLoader) setLoading(false);
       toast.error(error.message);
       return;
     }
 
-    setDeposits(data || []);
+    const depositsWithUrls = await Promise.all(
+      (data || []).map(async (deposit) => {
+        const screenshotUrl = deposit.screenshot
+          ? await getSignedScreenshot(deposit.screenshot)
+          : "";
+
+        return {
+          ...deposit,
+          screenshot_url: screenshotUrl,
+        };
+      })
+    );
+
+    setDeposits(depositsWithUrls);
+
+    if (showLoader) setLoading(false);
   }
 
   async function approveDeposit(deposit: any) {
@@ -96,14 +129,21 @@ export default function AdminDepositPage() {
     setActionId(deposit.id);
 
     try {
-      const { error } = await supabase
-        .from("deposits")
-        .update({ status: "rejected" })
-        .eq("id", deposit.id)
-        .eq("status", "pending");
+      const res = await fetch("/api/admin/deposits/reject", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          depositId: deposit.id,
+        }),
+      });
 
-      if (error) {
-        toast.error(error.message);
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        toast.error(result.message || "Reject failed");
+        await loadDeposits(false);
         return;
       }
 
@@ -263,10 +303,29 @@ export default function AdminDepositPage() {
                       UID: {deposit.uid}
                     </p>
 
-                    {deposit.screenshot && (
+                    {deposit.utr && (
+                      <p className="mt-2 break-all text-sm text-zinc-400">
+                        UTR: {deposit.utr}
+                      </p>
+                    )}
+
+                    {deposit.phone && (
+                      <p className="mt-2 text-sm text-zinc-400">
+                        Phone: {deposit.phone}
+                      </p>
+                    )}
+
+                    {deposit.created_at && (
+                      <p className="mt-2 text-xs text-zinc-500">
+                        Date: {new Date(deposit.created_at).toLocaleString()}
+                      </p>
+                    )}
+
+                    {deposit.screenshot_url && (
                       <a
-                        href={deposit.screenshot}
+                        href={deposit.screenshot_url}
                         target="_blank"
+                        rel="noopener noreferrer"
                         className="mt-4 inline-block rounded-2xl border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm font-black text-blue-300"
                       >
                         View Screenshot
