@@ -66,8 +66,8 @@ export default function DepositPage() {
   async function submitDeposit() {
     const depositAmount = Number(amount);
 
-    if (!depositAmount || depositAmount < 10) {
-      toast.error("Minimum deposit ₹10 hai");
+    if (!depositAmount || depositAmount < 100) {
+      toast.error("Minimum deposit ₹100 hai");
       return;
     }
 
@@ -83,42 +83,46 @@ export default function DepositPage() {
 
     setSubmitting(true);
 
-    const fileName = `deposit-${uid}-${Date.now()}.jpg`;
+    try {
+      const ext = screenshot.name.split(".").pop() || "jpg";
+      const fileName = `deposit-${uid}-${Date.now()}.${ext}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("screenshots")
-      .upload(fileName, screenshot);
+      const { error: uploadError } = await supabase.storage
+        .from("battle-screenshots")
+        .upload(fileName, screenshot, {
+          cacheControl: "3600",
+          upsert: false,
+        });
 
-    if (uploadError) {
+      if (uploadError) {
+        toast.error(uploadError.message || "Screenshot upload failed");
+        return;
+      }
+
+      const { error } = await supabase.from("deposits").insert({
+        uid,
+        phone,
+        amount: depositAmount,
+        utr: utr.trim(),
+        screenshot: fileName,
+        status: "pending",
+      });
+
+      if (error) {
+        toast.error(error.message || "Deposit request failed");
+        return;
+      }
+
+      toast.success("Deposit request submit ho gayi");
+      setAmount("");
+      setUtr("");
+      setScreenshot(null);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || "Deposit request failed");
+    } finally {
       setSubmitting(false);
-      toast.error("Screenshot upload failed");
-      return;
     }
-
-    const { data: urlData } = supabase.storage
-      .from("screenshots")
-      .getPublicUrl(fileName);
-
-    const { error } = await supabase.from("deposits").insert({
-      uid,
-      phone,
-      amount: depositAmount,
-      utr: utr.trim(),
-      screenshot_url: urlData.publicUrl,
-      status: "pending",
-    });
-
-    setSubmitting(false);
-
-    if (error) {
-      toast.error("Deposit request failed");
-      return;
-    }
-
-    toast.success("Deposit request submit ho gayi");
-    setAmount("");
-    setUtr("");
-    setScreenshot(null);
   }
 
   if (loading) {
