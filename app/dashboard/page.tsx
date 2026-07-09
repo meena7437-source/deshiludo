@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -9,40 +9,36 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
-type WalletTx = {
+type Battle = {
   id: number;
-  type: string;
-  title: string;
-  description: string | null;
   amount: number;
-  balance_after: number;
   status: string;
+  room_code?: string | null;
+  creator_uid: string;
+  joiner_uid?: string | null;
+  creator_name?: string | null;
+  joiner_name?: string | null;
   created_at: string;
 };
 
-export default function ProfilePage() {
+export default function DashboardPage() {
   const router = useRouter();
-  const walletHistoryRef = useRef<HTMLDivElement | null>(null);
 
   const [uid, setUid] = useState("");
   const [phone, setPhone] = useState("");
-
   const [depositBalance, setDepositBalance] = useState(0);
   const [winningBalance, setWinningBalance] = useState(0);
-  const [history, setHistory] = useState<WalletTx[]>([]);
-
-  const [referralCode, setReferralCode] = useState("");
-  const [kycStatus, setKycStatus] = useState("pending");
-  const [aadhaarUrl, setAadhaarUrl] = useState("");
-  const [panUrl, setPanUrl] = useState("");
-
+  const [openBattles, setOpenBattles] = useState<Battle[]>([]);
+  const [liveBattles, setLiveBattles] = useState<Battle[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploadingAadhaar, setUploadingAadhaar] = useState(false);
-  const [uploadingPan, setUploadingPan] = useState(false);
+  const [joiningId, setJoiningId] = useState<number | null>(null);
+  const [cancellingId, setCancellingId] = useState<number | null>(null);
+
+  const totalBalance = depositBalance + winningBalance;
 
   useEffect(() => {
+    let battleChannel: any = null;
     let walletChannel: any = null;
-    let historyChannel: any = null;
 
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -50,16 +46,23 @@ export default function ProfilePage() {
         return;
       }
 
-      const userPhone = user.phoneNumber || "";
-
       setUid(user.uid);
-      setPhone(userPhone);
+      setPhone(user.phoneNumber || "User");
 
-      await loadProfile(user.uid, userPhone);
-      await loadHistory(user.uid);
+      await loadWallet(user.uid);
+      await loadBattles();
+
+      battleChannel = supabase
+        .channel("dashboard-battles-live")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "battles" },
+          () => loadBattles()
+        )
+        .subscribe();
 
       walletChannel = supabase
-        .channel(`profile-wallet-${user.uid}`)
+        .channel(`wallet-live-${user.uid}`)
         .on(
           "postgres_changes",
           {
@@ -68,24 +71,9 @@ export default function ProfilePage() {
             table: "wallets",
             filter: `uid=eq.${user.uid}`,
           },
-          async () => {
-            await loadWallet(user.uid);
-          }
-        )
-        .subscribe();
-
-      historyChannel = supabase
-        .channel(`profile-history-${user.uid}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "wallet_transactions",
-            filter: `uid=eq.${user.uid}`,
-          },
-          async () => {
-            await loadHistory(user.uid);
+          (payload: any) => {
+            setDepositBalance(Number(payload.new?.deposit_balance || 0));
+            setWinningBalance(Number(payload.new?.winning_balance || 0));
           }
         )
         .subscribe();
@@ -95,17 +83,10 @@ export default function ProfilePage() {
 
     return () => {
       unsub();
+      if (battleChannel) supabase.removeChannel(battleChannel);
       if (walletChannel) supabase.removeChannel(walletChannel);
-      if (historyChannel) supabase.removeChannel(historyChannel);
     };
   }, [router]);
-
-  function makeReferralCode(userPhone: string, userId: string) {
-    const cleanPhone = userPhone.replace(/\D/g, "");
-    const last4 = cleanPhone.slice(-4) || userId.slice(0, 4).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-    return `DL${last4}${random}`;
-  }
 
   async function loadWallet(userId: string) {
     const { data, error } = await supabase
@@ -123,449 +104,382 @@ export default function ProfilePage() {
     setWinningBalance(Number(data?.winning_balance || 0));
   }
 
-  async function loadHistory(userId: string) {
+  async function loadBattles() {
     const { data, error } = await supabase
-      .from("wallet_transactions")
-      .select("id,type,title,description,amount,balance_after,status,created_at")
-      .eq("uid", userId)
-      .order("created_at", { ascending: false })
-      .limit(50);
+      .from("battles")
+      .select("*")
+      .in("status", ["open", "matched", "running"])
+      .order("created_at", { ascending: false });
 
     if (error) {
-      toast.error("Wallet history load nahi hui");
+      toast.error(error.message);
       return;
     }
 
-    setHistory((data || []) as WalletTx[]);
+    const battles = (data || []) as Battle[];
+
+    setOpenBattles(battles.filter((b) => b.status === "open"));
+    setLiveBattles(
+      battles.filter((b) => b.status === "matched" || b.status === "running")
+    );
   }
 
-  async function loadProfile(userId: string, userPhone: string) {
-    await loadWallet(userId);
-
-    const { data, error } = await supabase
-      .from("users")
-      .select("referral_code, aadhaar_url, pan_url, kyc_status")
-      .eq("firebase_uid", userId)
-      .maybeSingle();
-
-    if (error) {
-      toast.error("Profile load nahi hua");
-      return;
-    }
-
-    let code = data?.referral_code;
-
-    if (!code) {
-      code = makeReferralCode(userPhone, userId);
-
-      await supabase
-        .from("users")
-        .update({ referral_code: code })
-        .eq("firebase_uid", userId);
-    }
-
-    setReferralCode(code || "");
-    setAadhaarUrl(data?.aadhaar_url || "");
-    setPanUrl(data?.pan_url || "");
-    setKycStatus(data?.kyc_status || "pending");
-  }
-
-  async function uploadKycDoc(type: "aadhaar" | "pan", file: File) {
+  async function joinBattle(battleId: number) {
     try {
-      if (!uid) {
-        toast.error("User login nahi hai");
+      const user = auth.currentUser;
+
+      if (!user) {
+        router.push("/login");
         return;
       }
 
-      if (type === "aadhaar") setUploadingAadhaar(true);
-      if (type === "pan") setUploadingPan(true);
+      setJoiningId(battleId);
 
-      const formData = new FormData();
-      formData.append("uid", uid);
-      formData.append("type", type);
-      formData.append("file", file);
-
-      const res = await fetch("/api/kyc/upload", {
+      const res = await fetch("/api/battles/join", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          battleId,
+          uid: user.uid,
+          phone: user.phoneNumber || "",
+        }),
       });
 
       const result = await res.json();
 
       if (!res.ok || !result.success) {
-        toast.error(result.message || "Upload failed");
+        toast.error(result.message || "Battle join nahi hui");
         return;
       }
 
-      if (type === "aadhaar") setAadhaarUrl(result.path);
-      if (type === "pan") setPanUrl(result.path);
-
-      setKycStatus("pending");
-
-      toast.success(
-        type === "aadhaar" ? "Aadhaar upload ho gaya" : "PAN upload ho gaya"
-      );
+      toast.success("Battle joined successfully");
+      router.push(`/battle/${battleId}`);
     } catch (err: any) {
-      toast.error(err?.message || "Upload failed");
+      toast.error(err.message || "Something went wrong");
     } finally {
-      setUploadingAadhaar(false);
-      setUploadingPan(false);
+      setJoiningId(null);
     }
   }
 
-  async function copyReferral() {
-    if (!referralCode) {
-      toast.error("Referral code nahi mila");
+  async function cancelOpenBattle(battleId: number) {
+    const user = auth.currentUser;
+
+    if (!user) {
+      router.push("/login");
       return;
     }
 
-    await navigator.clipboard.writeText(referralCode);
-    toast.success("Referral code copied");
+    try {
+      setCancellingId(battleId);
+
+      const { data, error } = await supabase.rpc("cancel_battle_safe", {
+        battle_id_input: battleId,
+        uid_input: user.uid,
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      if (data === "cancelled_refunded" || data === "cancelled") {
+        toast.success("Battle cancel ho gayi, refund done ✅");
+      } else {
+        toast.success("Battle cancel request done ✅");
+      }
+
+      await loadBattles();
+      await loadWallet(user.uid);
+    } catch (err: any) {
+      toast.error(err.message || "Battle cancel nahi hui");
+    } finally {
+      setCancellingId(null);
+    }
   }
 
   async function logout() {
     await signOut(auth);
-    localStorage.removeItem("deshiludo_admin");
     router.push("/login");
-  }
-
-  function scrollToWalletHistory() {
-    walletHistoryRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }
-
-  function kycClass() {
-    if (kycStatus === "approved") return "text-green-400 bg-green-500/10";
-    if (kycStatus === "rejected") return "text-red-400 bg-red-500/10";
-    return "text-yellow-400 bg-yellow-500/10";
-  }
-
-  function txStyle(type: string, amount: number) {
-    if (amount < 0 || type === "battle_lost" || type === "withdraw") {
-      return {
-        icon: "🔴",
-        amountClass: "text-red-400",
-        border: "border-red-500/20",
-      };
-    }
-
-    if (amount === 0 || type === "battle_cancelled" || type === "cancel") {
-      return {
-        icon: "⚪",
-        amountClass: "text-zinc-300",
-        border: "border-zinc-700",
-      };
-    }
-
-    return {
-      icon: "🟢",
-      amountClass: "text-green-400",
-      border: "border-green-500/20",
-    };
-  }
-
-  function formatDate(date: string) {
-    return new Date(date).toLocaleString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  function formatAmount(amount: number) {
-    if (amount > 0) return `+₹${amount}`;
-    if (amount < 0) return `-₹${Math.abs(amount)}`;
-    return "₹0";
   }
 
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <Image
-            src="/logo.png"
-            alt="DeshiLudo Logo"
-            width={76}
-            height={76}
-            className="rounded-full border border-yellow-400/50 object-cover"
-            priority
-          />
-          <p className="text-yellow-400 font-bold">Loading Profile...</p>
-        </div>
+        <p className="text-yellow-400 font-bold">Loading DeshiLudo...</p>
       </main>
     );
   }
 
-  const totalBalance = depositBalance + winningBalance;
-
   return (
-    <main className="min-h-screen bg-black text-white p-3 pb-24">
-      <div className="max-w-xl mx-auto">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
+    <main className="min-h-screen bg-black text-white pb-20">
+      <header className="sticky top-0 z-20 bg-black/95 backdrop-blur border-b border-yellow-500/30 px-3 py-2">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
             <Image
               src="/logo.png"
-              alt="DeshiLudo"
-              width={48}
-              height={48}
-              className="rounded-full border border-yellow-400/40 object-cover"
+              alt="DeshiLudo Logo"
+              width={52}
+              height={52}
+              className="rounded-full border border-yellow-500/40"
               priority
             />
 
             <div>
-              <h1 className="text-2xl font-black text-yellow-400">Profile</h1>
-              <p className="text-[11px] text-zinc-500">DeshiLudo Player</p>
+              <h1 className="text-xl font-black text-yellow-400 leading-none">
+                DeshiLudo
+              </h1>
+              <p className="text-[10px] text-zinc-400 mt-1">{phone}</p>
             </div>
           </div>
 
-          <Link href="/dashboard">
-            <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs font-bold">
-              Dashboard
-            </button>
-          </Link>
-        </div>
+          <div className="flex items-center gap-2">
+            <div className="text-right">
+              <p className="text-[10px] text-zinc-400">Balance</p>
+              <p className="text-base font-black text-green-400">
+                ₹{totalBalance}
+              </p>
+            </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
-          <p className="text-xs text-zinc-400">Mobile Number</p>
-          <p className="text-lg font-black text-white">{phone || "User"}</p>
-          <p className="text-[10px] text-zinc-600 mt-1 break-all">UID: {uid}</p>
+            <Link href="/profile">
+              <button className="rounded-lg bg-yellow-400 text-black px-3 py-2 text-xs font-black">
+                Profile
+              </button>
+            </Link>
+          </div>
         </div>
+      </header>
 
+      <section className="max-w-3xl mx-auto px-3 pt-3">
         <div className="grid grid-cols-3 gap-2 mb-3">
-          <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
-            <p className="text-[10px] text-zinc-400">Deposit</p>
-            <p className="text-lg font-black text-yellow-400">
+          <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3">
+            <p className="text-[10px] text-green-300">Deposit</p>
+            <p className="text-lg font-black text-green-400">
               ₹{depositBalance}
             </p>
           </div>
 
-          <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
-            <p className="text-[10px] text-zinc-400">Winning</p>
-            <p className="text-lg font-black text-green-400">
+          <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3">
+            <p className="text-[10px] text-yellow-300">Winning</p>
+            <p className="text-lg font-black text-yellow-400">
               ₹{winningBalance}
             </p>
           </div>
 
-          <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
+          <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
             <p className="text-[10px] text-zinc-400">Total</p>
             <p className="text-lg font-black text-white">₹{totalBalance}</p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <button
-            onClick={scrollToWalletHistory}
-            className="w-full bg-yellow-400 text-black rounded-lg py-3 font-black text-sm"
-          >
-            Wallet History
-          </button>
-
-          <Link href="/battle-history">
-            <button className="w-full bg-zinc-800 text-white rounded-lg py-3 font-bold text-sm">
-              Battle History
+        <div className="grid grid-cols-3 gap-2 mb-3">
+          <Link href="/create-battle">
+            <button className="w-full rounded-xl bg-yellow-400 text-black py-2 text-xs font-black">
+              Create
             </button>
           </Link>
-        </div>
 
-        <div
-          ref={walletHistoryRef}
-          className="bg-zinc-950 border border-yellow-500/20 rounded-xl p-3 mb-3 scroll-mt-5"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-lg font-black text-yellow-400">
-                Wallet History
-              </h2>
-              <p className="text-[11px] text-zinc-500">
-                Deposit, bonus, join, win, withdraw sab yahin dikhega
-              </p>
-            </div>
-
-            <span className="text-[10px] bg-yellow-400/10 text-yellow-400 px-3 py-1 rounded-full font-black">
-              LIVE
-            </span>
-          </div>
-
-          {history.length === 0 ? (
-            <div className="bg-black border border-zinc-800 rounded-xl p-4 text-center">
-              <p className="text-sm text-zinc-400">
-                Abhi koi wallet history nahi hai.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
-              {history.map((tx) => {
-                const amount = Number(tx.amount || 0);
-                const style = txStyle(tx.type, amount);
-
-                return (
-                  <div
-                    key={tx.id}
-                    className={`bg-black border ${style.border} rounded-xl p-3`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-white">
-                          {style.icon} {tx.title || tx.type}
-                        </p>
-
-                        {tx.description && (
-                          <p className="text-[11px] text-zinc-400 mt-1">
-                            {tx.description}
-                          </p>
-                        )}
-
-                        <p className="text-[11px] text-zinc-500 mt-1">
-                          {formatDate(tx.created_at)} • {tx.status || "success"}
-                        </p>
-
-                        <p className="text-[10px] text-zinc-600 mt-1">
-                          Balance After: ₹{Number(tx.balance_after || 0)}
-                        </p>
-                      </div>
-
-                      <p
-                        className={`text-lg font-black whitespace-nowrap ${style.amountClass}`}
-                      >
-                        {formatAmount(amount)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-yellow-400/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
-          <p className="text-xs text-zinc-400">Referral Code</p>
-
-          <div className="flex items-center justify-between gap-2 mt-1">
-            <p className="text-xl font-black text-yellow-400 break-all">
-              {referralCode || "Generating..."}
-            </p>
-
-            <button
-              onClick={copyReferral}
-              className="bg-yellow-400 text-black px-3 py-2 rounded-lg text-xs font-black"
-            >
-              Copy
-            </button>
-          </div>
-
-          <p className="text-[11px] text-zinc-500 mt-2">
-            Friend first deposit karega to aapko 5% bonus milega.
-          </p>
-        </div>
-
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-lg font-black text-white">KYC Documents</h2>
-              <p className="text-[11px] text-zinc-500">
-                Aadhaar aur PAN upload karo.
-              </p>
-            </div>
-
-            <span
-              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${kycClass()}`}
-            >
-              {kycStatus}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">
-                Aadhaar Card
-              </p>
-              <p
-                className={`text-xs ${
-                  aadhaarUrl ? "text-green-400" : "text-zinc-500"
-                }`}
-              >
-                {aadhaarUrl ? "Aadhaar uploaded ✅" : "Aadhaar upload nahi hai."}
-              </p>
-
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadKycDoc("aadhaar", file);
-                }}
-                className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
-              />
-
-              {uploadingAadhaar && (
-                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
-              )}
-            </div>
-
-            <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">PAN Card</p>
-              <p
-                className={`text-xs ${
-                  panUrl ? "text-green-400" : "text-zinc-500"
-                }`}
-              >
-                {panUrl ? "PAN uploaded ✅" : "PAN card upload nahi hai."}
-              </p>
-
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadKycDoc("pan", file);
-                }}
-                className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
-              />
-
-              {uploadingPan && (
-                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 mb-3">
           <Link href="/deposit">
-            <button className="w-full bg-yellow-400 text-black rounded-lg py-3 font-black text-sm">
+            <button className="w-full rounded-xl bg-zinc-900 border border-green-700/50 text-green-400 py-2 text-xs font-bold">
               Deposit
             </button>
           </Link>
 
           <Link href="/withdraw">
-            <button className="w-full bg-green-500 text-black rounded-lg py-3 font-black text-sm">
+            <button className="w-full rounded-xl bg-zinc-900 border border-red-700/50 text-red-400 py-2 text-xs font-bold">
               Withdraw
             </button>
           </Link>
 
-          <Link href="/dashboard">
-            <button className="w-full bg-zinc-800 text-white rounded-lg py-3 font-bold text-sm">
-              Dashboard
+          <Link href="/wallet">
+            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
+              Wallet
             </button>
           </Link>
 
-          <Link href="/support">
-            <button className="w-full bg-blue-600 text-white rounded-lg py-3 font-black text-sm">
-              Help & Support
+          <Link href="/profile">
+            <button className="w-full rounded-xl bg-zinc-900 border border-yellow-500/50 text-yellow-400 py-2 text-xs font-bold">
+              Profile
+            </button>
+          </Link>
+
+          <Link href="/battle-history">
+            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
+              History
             </button>
           </Link>
         </div>
 
-        <button
-          onClick={logout}
-          className="w-full bg-red-600 text-white rounded-lg py-3 font-black text-sm"
-        >
-          Logout
-        </button>
-      </div>
+        <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-zinc-950 to-zinc-900 p-3 mb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-zinc-400">Open Battles</p>
+              <h2 className="text-lg font-black text-white">
+                Join Battle Room
+              </h2>
+            </div>
+
+            <div className="rounded-full bg-green-500/10 border border-green-500/30 px-3 py-1">
+              <p className="text-[11px] font-bold text-green-400">
+                {openBattles.length} Open
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {openBattles.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center mb-4">
+            <p className="text-zinc-400 text-sm">
+              Abhi koi open battle nahi hai.
+            </p>
+            <Link href="/create-battle">
+              <button className="mt-4 bg-yellow-400 text-black px-5 py-2 rounded-xl text-sm font-black">
+                First Battle Create Karo
+              </button>
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-2 mb-5">
+            {openBattles.map((battle) => {
+              const isOwnBattle = battle.creator_uid === uid;
+
+              return (
+                <div
+                  key={battle.id}
+                  className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-lg font-black text-yellow-400">
+                          ₹{battle.amount}
+                        </p>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                          OPEN
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-zinc-400 truncate mt-1">
+                        {battle.creator_name || "Player"} waiting for opponent
+                      </p>
+
+                      <p className="text-[11px] text-zinc-500 mt-1">
+                        Battle ID #{battle.id}
+                      </p>
+                    </div>
+
+                    <div className="shrink-0 flex flex-col gap-2">
+                      {isOwnBattle ? (
+                        <>
+                          <button
+                            onClick={() => router.push(`/battle/${battle.id}`)}
+                            className="rounded-xl bg-zinc-800 text-zinc-300 px-3 py-2 text-xs font-bold border border-zinc-700"
+                          >
+                            Waiting
+                          </button>
+
+                          <button
+                            onClick={() => cancelOpenBattle(battle.id)}
+                            disabled={cancellingId === battle.id}
+                            className="rounded-xl bg-red-500/10 text-red-400 px-3 py-2 text-xs font-black border border-red-500/30 disabled:opacity-60"
+                          >
+                            {cancellingId === battle.id
+                              ? "Cancelling..."
+                              : "Cancel"}
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => joinBattle(battle.id)}
+                          disabled={joiningId === battle.id}
+                          className="rounded-xl bg-yellow-400 text-black px-5 py-2 text-xs font-black disabled:opacity-60"
+                        >
+                          {joiningId === battle.id ? "Joining..." : "Join"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-br from-zinc-950 to-zinc-900 p-3 mb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-zinc-400">Live Battles</p>
+              <h2 className="text-lg font-black text-white">Running Battles</h2>
+            </div>
+
+            <div className="rounded-full bg-blue-500/10 border border-blue-500/30 px-3 py-1">
+              <p className="text-[11px] font-bold text-blue-400">
+                {liveBattles.length} Live
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {liveBattles.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
+            <p className="text-zinc-500 text-sm">
+              Abhi koi live battle nahi hai.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {liveBattles.map((battle) => (
+              <div
+                key={battle.id}
+                className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3 shadow-lg"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-lg font-black text-yellow-400">
+                        ₹{battle.amount}
+                      </p>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">
+                        {battle.status}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-zinc-400 truncate mt-1">
+                      {battle.creator_name || "Player 1"} vs{" "}
+                      {battle.joiner_name || "Player 2"}
+                    </p>
+
+                    <p className="text-[11px] text-zinc-500 mt-1">
+                      Battle ID #{battle.id}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => router.push(`/battle/${battle.id}`)}
+                    className="rounded-xl bg-zinc-800 text-white px-4 py-2 text-xs font-black border border-zinc-700"
+                  >
+                    View
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <Link href="/battle-history">
+            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
+              My Battles
+            </button>
+          </Link>
+
+          <button
+            onClick={logout}
+            className="w-full rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 py-2 text-xs font-bold"
+          >
+            Logout
+          </button>
+        </div>
+      </section>
     </main>
   );
 }
