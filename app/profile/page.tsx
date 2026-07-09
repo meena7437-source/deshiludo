@@ -9,26 +9,13 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
-type WalletTx = {
-  id: number;
-  type: string;
-  title: string;
-  amount: number;
-  direction: string;
-  balance_type: string | null;
-  reference_id: number | null;
-  created_at: string;
-};
-
 export default function ProfilePage() {
   const router = useRouter();
 
   const [uid, setUid] = useState("");
   const [phone, setPhone] = useState("");
-
   const [depositBalance, setDepositBalance] = useState(0);
   const [winningBalance, setWinningBalance] = useState(0);
-  const [history, setHistory] = useState<WalletTx[]>([]);
 
   const [referralCode, setReferralCode] = useState("");
   const [kycStatus, setKycStatus] = useState("pending");
@@ -41,7 +28,6 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let walletChannel: any = null;
-    let historyChannel: any = null;
 
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -55,7 +41,6 @@ export default function ProfilePage() {
       setPhone(userPhone);
 
       await loadProfile(user.uid, userPhone);
-      await loadHistory(user.uid);
 
       walletChannel = supabase
         .channel(`profile-wallet-${user.uid}`)
@@ -73,29 +58,12 @@ export default function ProfilePage() {
         )
         .subscribe();
 
-      historyChannel = supabase
-        .channel(`profile-history-${user.uid}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "wallet_history",
-            filter: `uid=eq.${user.uid}`,
-          },
-          async () => {
-            await loadHistory(user.uid);
-          }
-        )
-        .subscribe();
-
       setLoading(false);
     });
 
     return () => {
       unsub();
       if (walletChannel) supabase.removeChannel(walletChannel);
-      if (historyChannel) supabase.removeChannel(historyChannel);
     };
   }, [router]);
 
@@ -120,22 +88,6 @@ export default function ProfilePage() {
 
     setDepositBalance(Number(data?.deposit_balance || 0));
     setWinningBalance(Number(data?.winning_balance || 0));
-  }
-
-  async function loadHistory(userId: string) {
-    const { data, error } = await supabase
-      .from("wallet_history")
-      .select("id,type,title,amount,direction,balance_type,reference_id,created_at")
-      .eq("uid", userId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    if (error) {
-      toast.error("Wallet history load nahi hui");
-      return;
-    }
-
-    setHistory((data || []) as WalletTx[]);
   }
 
   async function loadProfile(userId: string, userPhone: string) {
@@ -233,46 +185,6 @@ export default function ProfilePage() {
     return "text-yellow-400 bg-yellow-500/10";
   }
 
-  function txStyle(tx: WalletTx) {
-    if (tx.direction === "minus") {
-      return {
-        icon: "🔴",
-        amountClass: "text-red-400",
-        border: "border-red-500/20",
-      };
-    }
-
-    if (tx.direction === "zero" || Number(tx.amount || 0) === 0) {
-      return {
-        icon: "⚪",
-        amountClass: "text-zinc-300",
-        border: "border-zinc-700",
-      };
-    }
-
-    return {
-      icon: "🟢",
-      amountClass: "text-green-400",
-      border: "border-green-500/20",
-    };
-  }
-
-  function formatDate(date: string) {
-    return new Date(date).toLocaleString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-
-  function formatAmount(amount: number, direction: string) {
-    if (direction === "plus") return `+₹${Math.abs(amount)}`;
-    if (direction === "minus") return `-₹${Math.abs(amount)}`;
-    return "₹0";
-  }
-
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -329,12 +241,16 @@ export default function ProfilePage() {
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Deposit</p>
-            <p className="text-lg font-black text-yellow-400">₹{depositBalance}</p>
+            <p className="text-lg font-black text-yellow-400">
+              ₹{depositBalance}
+            </p>
           </div>
 
           <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Winning</p>
-            <p className="text-lg font-black text-green-400">₹{winningBalance}</p>
+            <p className="text-lg font-black text-green-400">
+              ₹{winningBalance}
+            </p>
           </div>
 
           <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
@@ -343,69 +259,11 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        <div className="bg-zinc-950 border border-yellow-500/20 rounded-xl p-3 mb-3">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 className="text-lg font-black text-yellow-400">
-                Wallet History
-              </h2>
-              <p className="text-[11px] text-zinc-500">
-                Deposit, bonus, join, win, withdraw sab yahin dikhega
-              </p>
-            </div>
-
-            <span className="text-[10px] bg-yellow-400/10 text-yellow-400 px-3 py-1 rounded-full font-black">
-              LIVE
-            </span>
-          </div>
-
-          {history.length === 0 ? (
-            <div className="bg-black border border-zinc-800 rounded-xl p-4 text-center">
-              <p className="text-sm text-zinc-400">
-                Abhi koi wallet history nahi hai.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
-              {history.map((tx) => {
-                const amount = Number(tx.amount || 0);
-                const style = txStyle(tx);
-
-                return (
-                  <div
-                    key={tx.id}
-                    className={`bg-black border ${style.border} rounded-xl p-3`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-white">
-                          {style.icon} {tx.title || tx.type}
-                        </p>
-
-                        <p className="text-[11px] text-zinc-500 mt-1">
-                          {formatDate(tx.created_at)} •{" "}
-                          {tx.balance_type || "wallet"}
-                        </p>
-
-                        {tx.reference_id && (
-                          <p className="text-[10px] text-zinc-600 mt-1">
-                            Ref ID: {tx.reference_id}
-                          </p>
-                        )}
-                      </div>
-
-                      <p
-                        className={`text-lg font-black whitespace-nowrap ${style.amountClass}`}
-                      >
-                        {formatAmount(amount, tx.direction)}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        <Link href="/wallet-history">
+          <button className="w-full bg-zinc-950 border border-yellow-500/30 text-yellow-400 rounded-xl py-3 font-black text-sm mb-3">
+            Wallet History →
+          </button>
+        </Link>
 
         <div className="bg-yellow-400/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
           <p className="text-xs text-zinc-400">Referral Code</p>
@@ -446,7 +304,9 @@ export default function ProfilePage() {
 
           <div className="grid grid-cols-1 gap-3">
             <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">Aadhaar Card</p>
+              <p className="text-sm font-bold text-zinc-300 mb-2">
+                Aadhaar Card
+              </p>
               <p
                 className={`text-xs ${
                   aadhaarUrl ? "text-green-400" : "text-zinc-500"
