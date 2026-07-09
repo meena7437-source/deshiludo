@@ -13,10 +13,10 @@ type WalletTx = {
   id: number;
   type: string;
   title: string;
-  description: string | null;
   amount: number;
-  balance_after: number;
-  status: string;
+  direction: string;
+  balance_type: string | null;
+  reference_id: number | null;
   created_at: string;
 };
 
@@ -80,7 +80,7 @@ export default function ProfilePage() {
           {
             event: "*",
             schema: "public",
-            table: "wallet_transactions",
+            table: "wallet_history",
             filter: `uid=eq.${user.uid}`,
           },
           async () => {
@@ -124,8 +124,8 @@ export default function ProfilePage() {
 
   async function loadHistory(userId: string) {
     const { data, error } = await supabase
-      .from("wallet_transactions")
-      .select("id,type,title,description,amount,balance_after,status,created_at")
+      .from("wallet_history")
+      .select("id,type,title,amount,direction,balance_type,reference_id,created_at")
       .eq("uid", userId)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -233,8 +233,8 @@ export default function ProfilePage() {
     return "text-yellow-400 bg-yellow-500/10";
   }
 
-  function txStyle(type: string, amount: number) {
-    if (amount < 0 || type === "battle_lost" || type === "withdraw") {
+  function txStyle(tx: WalletTx) {
+    if (tx.direction === "minus") {
       return {
         icon: "🔴",
         amountClass: "text-red-400",
@@ -242,7 +242,7 @@ export default function ProfilePage() {
       };
     }
 
-    if (amount === 0 || type === "battle_cancelled" || type === "cancel") {
+    if (tx.direction === "zero" || Number(tx.amount || 0) === 0) {
       return {
         icon: "⚪",
         amountClass: "text-zinc-300",
@@ -267,9 +267,9 @@ export default function ProfilePage() {
     });
   }
 
-  function formatAmount(amount: number) {
-    if (amount > 0) return `+₹${amount}`;
-    if (amount < 0) return `-₹${Math.abs(amount)}`;
+  function formatAmount(amount: number, direction: string) {
+    if (direction === "plus") return `+₹${Math.abs(amount)}`;
+    if (direction === "minus") return `-₹${Math.abs(amount)}`;
     return "₹0";
   }
 
@@ -312,6 +312,12 @@ export default function ProfilePage() {
               <p className="text-[11px] text-zinc-500">DeshiLudo Player</p>
             </div>
           </div>
+
+          <Link href="/dashboard">
+            <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs">
+              Back
+            </button>
+          </Link>
         </div>
 
         <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
@@ -323,16 +329,12 @@ export default function ProfilePage() {
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Deposit</p>
-            <p className="text-lg font-black text-yellow-400">
-              ₹{depositBalance}
-            </p>
+            <p className="text-lg font-black text-yellow-400">₹{depositBalance}</p>
           </div>
 
           <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Winning</p>
-            <p className="text-lg font-black text-green-400">
-              ₹{winningBalance}
-            </p>
+            <p className="text-lg font-black text-green-400">₹{winningBalance}</p>
           </div>
 
           <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
@@ -367,7 +369,7 @@ export default function ProfilePage() {
             <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
               {history.map((tx) => {
                 const amount = Number(tx.amount || 0);
-                const style = txStyle(tx.type, amount);
+                const style = txStyle(tx);
 
                 return (
                   <div
@@ -380,25 +382,22 @@ export default function ProfilePage() {
                           {style.icon} {tx.title || tx.type}
                         </p>
 
-                        {tx.description && (
-                          <p className="text-[11px] text-zinc-400 mt-1">
-                            {tx.description}
+                        <p className="text-[11px] text-zinc-500 mt-1">
+                          {formatDate(tx.created_at)} •{" "}
+                          {tx.balance_type || "wallet"}
+                        </p>
+
+                        {tx.reference_id && (
+                          <p className="text-[10px] text-zinc-600 mt-1">
+                            Ref ID: {tx.reference_id}
                           </p>
                         )}
-
-                        <p className="text-[11px] text-zinc-500 mt-1">
-                          {formatDate(tx.created_at)} • {tx.status || "success"}
-                        </p>
-
-                        <p className="text-[10px] text-zinc-600 mt-1">
-                          Balance After: ₹{Number(tx.balance_after || 0)}
-                        </p>
                       </div>
 
                       <p
                         className={`text-lg font-black whitespace-nowrap ${style.amountClass}`}
                       >
-                        {formatAmount(amount)}
+                        {formatAmount(amount, tx.direction)}
                       </p>
                     </div>
                   </div>
@@ -447,9 +446,7 @@ export default function ProfilePage() {
 
           <div className="grid grid-cols-1 gap-3">
             <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">
-                Aadhaar Card
-              </p>
+              <p className="text-sm font-bold text-zinc-300 mb-2">Aadhaar Card</p>
               <p
                 className={`text-xs ${
                   aadhaarUrl ? "text-green-400" : "text-zinc-500"
