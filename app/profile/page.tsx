@@ -40,6 +40,9 @@ export default function ProfilePage() {
   const [uploadingPan, setUploadingPan] = useState(false);
 
   useEffect(() => {
+    let walletChannel: any = null;
+    let historyChannel: any = null;
+
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         router.push("/login");
@@ -47,15 +50,15 @@ export default function ProfilePage() {
       }
 
       const userPhone = user.phoneNumber || "";
+
       setUid(user.uid);
       setPhone(userPhone);
 
       await loadProfile(user.uid, userPhone);
       await loadHistory(user.uid);
-      setLoading(false);
 
-      const walletChannel = supabase
-        .channel("profile-wallet-realtime")
+      walletChannel = supabase
+        .channel(`profile-wallet-${user.uid}`)
         .on(
           "postgres_changes",
           {
@@ -70,8 +73,8 @@ export default function ProfilePage() {
         )
         .subscribe();
 
-      const historyChannel = supabase
-        .channel("profile-history-realtime")
+      historyChannel = supabase
+        .channel(`profile-history-${user.uid}`)
         .on(
           "postgres_changes",
           {
@@ -86,13 +89,14 @@ export default function ProfilePage() {
         )
         .subscribe();
 
-      return () => {
-        supabase.removeChannel(walletChannel);
-        supabase.removeChannel(historyChannel);
-      };
+      setLoading(false);
     });
 
-    return () => unsub();
+    return () => {
+      unsub();
+      if (walletChannel) supabase.removeChannel(walletChannel);
+      if (historyChannel) supabase.removeChannel(historyChannel);
+    };
   }, [router]);
 
   function makeReferralCode(userPhone: string, userId: string) {
@@ -124,7 +128,7 @@ export default function ProfilePage() {
       .select("id,type,title,description,amount,balance_after,status,created_at")
       .eq("uid", userId)
       .order("created_at", { ascending: false })
-      .limit(30);
+      .limit(50);
 
     if (error) {
       toast.error("Wallet history load nahi hui");
@@ -196,7 +200,9 @@ export default function ProfilePage() {
       if (type === "pan") setPanUrl(result.path);
 
       setKycStatus("pending");
-      toast.success(type === "aadhaar" ? "Aadhaar upload ho gaya" : "PAN upload ho gaya");
+      toast.success(
+        type === "aadhaar" ? "Aadhaar upload ho gaya" : "PAN upload ho gaya"
+      );
     } catch (err: any) {
       toast.error(err?.message || "Upload failed");
     } finally {
@@ -227,8 +233,8 @@ export default function ProfilePage() {
     return "text-yellow-400 bg-yellow-500/10";
   }
 
-  function txStyle(type: string) {
-    if (type === "battle_lost" || type === "withdraw") {
+  function txStyle(type: string, amount: number) {
+    if (amount < 0 || type === "battle_lost" || type === "withdraw") {
       return {
         icon: "🔴",
         amountClass: "text-red-400",
@@ -236,7 +242,7 @@ export default function ProfilePage() {
       };
     }
 
-    if (type === "battle_cancelled") {
+    if (amount === 0 || type === "battle_cancelled" || type === "cancel") {
       return {
         icon: "⚪",
         amountClass: "text-zinc-300",
@@ -252,10 +258,12 @@ export default function ProfilePage() {
   }
 
   function formatDate(date: string) {
-    return new Date(date).toLocaleDateString("en-IN", {
+    return new Date(date).toLocaleString("en-IN", {
       day: "2-digit",
       month: "short",
       year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   }
 
@@ -307,7 +315,7 @@ export default function ProfilePage() {
 
           <Link href="/dashboard">
             <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs font-bold">
-              Back
+              Dashboard
             </button>
           </Link>
         </div>
@@ -315,19 +323,22 @@ export default function ProfilePage() {
         <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
           <p className="text-xs text-zinc-400">Mobile Number</p>
           <p className="text-lg font-black text-white">{phone || "User"}</p>
-
           <p className="text-[10px] text-zinc-600 mt-1 break-all">UID: {uid}</p>
         </div>
 
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Deposit</p>
-            <p className="text-lg font-black text-yellow-400">₹{depositBalance}</p>
+            <p className="text-lg font-black text-yellow-400">
+              ₹{depositBalance}
+            </p>
           </div>
 
           <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Winning</p>
-            <p className="text-lg font-black text-green-400">₹{winningBalance}</p>
+            <p className="text-lg font-black text-green-400">
+              ₹{winningBalance}
+            </p>
           </div>
 
           <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
@@ -339,8 +350,12 @@ export default function ProfilePage() {
         <div className="bg-zinc-950 border border-yellow-500/20 rounded-xl p-3 mb-3">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <h2 className="text-lg font-black text-yellow-400">Wallet History</h2>
-              <p className="text-[11px] text-zinc-500">Latest transactions</p>
+              <h2 className="text-lg font-black text-yellow-400">
+                Wallet History
+              </h2>
+              <p className="text-[11px] text-zinc-500">
+                Deposit, bonus, join, win, withdraw sab yahin dikhega
+              </p>
             </div>
 
             <span className="text-[10px] bg-yellow-400/10 text-yellow-400 px-3 py-1 rounded-full font-black">
@@ -350,12 +365,15 @@ export default function ProfilePage() {
 
           {history.length === 0 ? (
             <div className="bg-black border border-zinc-800 rounded-xl p-4 text-center">
-              <p className="text-sm text-zinc-400">Abhi koi wallet history nahi hai.</p>
+              <p className="text-sm text-zinc-400">
+                Abhi koi wallet history nahi hai.
+              </p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[430px] overflow-y-auto pr-1">
               {history.map((tx) => {
-                const style = txStyle(tx.type);
+                const amount = Number(tx.amount || 0);
+                const style = txStyle(tx.type, amount);
 
                 return (
                   <div
@@ -363,20 +381,30 @@ export default function ProfilePage() {
                     className={`bg-black border ${style.border} rounded-xl p-3`}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm font-black text-white">
-                          {style.icon} {tx.title}
+                          {style.icon} {tx.title || tx.type}
                         </p>
+
+                        {tx.description && (
+                          <p className="text-[11px] text-zinc-400 mt-1">
+                            {tx.description}
+                          </p>
+                        )}
+
                         <p className="text-[11px] text-zinc-500 mt-1">
-                          {formatDate(tx.created_at)} • {tx.status}
+                          {formatDate(tx.created_at)} • {tx.status || "success"}
                         </p>
+
                         <p className="text-[10px] text-zinc-600 mt-1">
                           Balance After: ₹{Number(tx.balance_after || 0)}
                         </p>
                       </div>
 
-                      <p className={`text-lg font-black ${style.amountClass}`}>
-                        {formatAmount(Number(tx.amount || 0))}
+                      <p
+                        className={`text-lg font-black whitespace-nowrap ${style.amountClass}`}
+                      >
+                        {formatAmount(amount)}
                       </p>
                     </div>
                   </div>
@@ -411,18 +439,28 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-lg font-black text-white">KYC Documents</h2>
-              <p className="text-[11px] text-zinc-500">Aadhaar aur PAN upload karo.</p>
+              <p className="text-[11px] text-zinc-500">
+                Aadhaar aur PAN upload karo.
+              </p>
             </div>
 
-            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${kycClass()}`}>
+            <span
+              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${kycClass()}`}
+            >
               {kycStatus}
             </span>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
             <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">Aadhaar Card</p>
-              <p className={`text-xs ${aadhaarUrl ? "text-green-400" : "text-zinc-500"}`}>
+              <p className="text-sm font-bold text-zinc-300 mb-2">
+                Aadhaar Card
+              </p>
+              <p
+                className={`text-xs ${
+                  aadhaarUrl ? "text-green-400" : "text-zinc-500"
+                }`}
+              >
                 {aadhaarUrl ? "Aadhaar uploaded ✅" : "Aadhaar upload nahi hai."}
               </p>
 
@@ -436,12 +474,18 @@ export default function ProfilePage() {
                 className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
               />
 
-              {uploadingAadhaar && <p className="text-xs text-yellow-400 mt-2">Uploading...</p>}
+              {uploadingAadhaar && (
+                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
+              )}
             </div>
 
             <div className="bg-black border border-zinc-800 rounded-xl p-3">
               <p className="text-sm font-bold text-zinc-300 mb-2">PAN Card</p>
-              <p className={`text-xs ${panUrl ? "text-green-400" : "text-zinc-500"}`}>
+              <p
+                className={`text-xs ${
+                  panUrl ? "text-green-400" : "text-zinc-500"
+                }`}
+              >
                 {panUrl ? "PAN uploaded ✅" : "PAN card upload nahi hai."}
               </p>
 
@@ -455,7 +499,9 @@ export default function ProfilePage() {
                 className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
               />
 
-              {uploadingPan && <p className="text-xs text-yellow-400 mt-2">Uploading...</p>}
+              {uploadingPan && (
+                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
+              )}
             </div>
           </div>
         </div>
