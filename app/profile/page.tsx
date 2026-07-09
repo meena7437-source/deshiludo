@@ -9,6 +9,17 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
+type WalletTx = {
+  id: number;
+  type: string;
+  title: string;
+  description: string | null;
+  amount: number;
+  balance_after: number;
+  status: string;
+  created_at: string;
+};
+
 export default function ProfilePage() {
   const router = useRouter();
 
@@ -17,6 +28,7 @@ export default function ProfilePage() {
 
   const [depositBalance, setDepositBalance] = useState(0);
   const [winningBalance, setWinningBalance] = useState(0);
+  const [history, setHistory] = useState<WalletTx[]>([]);
 
   const [referralCode, setReferralCode] = useState("");
   const [kycStatus, setKycStatus] = useState("pending");
@@ -39,9 +51,10 @@ export default function ProfilePage() {
       setPhone(userPhone);
 
       await loadProfile(user.uid, userPhone);
+      await loadHistory(user.uid);
       setLoading(false);
 
-      const channel = supabase
+      const walletChannel = supabase
         .channel("profile-wallet-realtime")
         .on(
           "postgres_changes",
@@ -57,8 +70,25 @@ export default function ProfilePage() {
         )
         .subscribe();
 
+      const historyChannel = supabase
+        .channel("profile-history-realtime")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "wallet_transactions",
+            filter: `uid=eq.${user.uid}`,
+          },
+          async () => {
+            await loadHistory(user.uid);
+          }
+        )
+        .subscribe();
+
       return () => {
-        supabase.removeChannel(channel);
+        supabase.removeChannel(walletChannel);
+        supabase.removeChannel(historyChannel);
       };
     });
 
@@ -86,6 +116,22 @@ export default function ProfilePage() {
 
     setDepositBalance(Number(data?.deposit_balance || 0));
     setWinningBalance(Number(data?.winning_balance || 0));
+  }
+
+  async function loadHistory(userId: string) {
+    const { data, error } = await supabase
+      .from("wallet_transactions")
+      .select("id,type,title,description,amount,balance_after,status,created_at")
+      .eq("uid", userId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (error) {
+      toast.error("Wallet history load nahi hui");
+      return;
+    }
+
+    setHistory((data || []) as WalletTx[]);
   }
 
   async function loadProfile(userId: string, userPhone: string) {
@@ -126,8 +172,6 @@ export default function ProfilePage() {
         return;
       }
 
-      if (!file) return;
-
       if (type === "aadhaar") setUploadingAadhaar(true);
       if (type === "pan") setUploadingPan(true);
 
@@ -152,14 +196,8 @@ export default function ProfilePage() {
       if (type === "pan") setPanUrl(result.path);
 
       setKycStatus("pending");
-
-      toast.success(
-        type === "aadhaar"
-          ? "Aadhaar upload ho gaya"
-          : "PAN card upload ho gaya"
-      );
+      toast.success(type === "aadhaar" ? "Aadhaar upload ho gaya" : "PAN upload ho gaya");
     } catch (err: any) {
-      console.error(err);
       toast.error(err?.message || "Upload failed");
     } finally {
       setUploadingAadhaar(false);
@@ -189,6 +227,44 @@ export default function ProfilePage() {
     return "text-yellow-400 bg-yellow-500/10";
   }
 
+  function txStyle(type: string) {
+    if (type === "battle_lost" || type === "withdraw") {
+      return {
+        icon: "🔴",
+        amountClass: "text-red-400",
+        border: "border-red-500/20",
+      };
+    }
+
+    if (type === "battle_cancelled") {
+      return {
+        icon: "⚪",
+        amountClass: "text-zinc-300",
+        border: "border-zinc-700",
+      };
+    }
+
+    return {
+      icon: "🟢",
+      amountClass: "text-green-400",
+      border: "border-green-500/20",
+    };
+  }
+
+  function formatDate(date: string) {
+    return new Date(date).toLocaleDateString("en-IN", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+  }
+
+  function formatAmount(amount: number) {
+    if (amount > 0) return `+₹${amount}`;
+    if (amount < 0) return `-₹${Math.abs(amount)}`;
+    return "₹0";
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
@@ -210,7 +286,7 @@ export default function ProfilePage() {
   const totalBalance = depositBalance + winningBalance;
 
   return (
-    <main className="min-h-screen bg-black text-white p-3">
+    <main className="min-h-screen bg-black text-white p-3 pb-24">
       <div className="max-w-xl mx-auto">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -240,30 +316,74 @@ export default function ProfilePage() {
           <p className="text-xs text-zinc-400">Mobile Number</p>
           <p className="text-lg font-black text-white">{phone || "User"}</p>
 
-          <p className="text-[10px] text-zinc-600 mt-1 break-all">
-            UID: {uid}
-          </p>
+          <p className="text-[10px] text-zinc-600 mt-1 break-all">UID: {uid}</p>
         </div>
 
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Deposit</p>
-            <p className="text-lg font-black text-yellow-400">
-              ₹{depositBalance}
-            </p>
+            <p className="text-lg font-black text-yellow-400">₹{depositBalance}</p>
           </div>
 
           <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Winning</p>
-            <p className="text-lg font-black text-green-400">
-              ₹{winningBalance}
-            </p>
+            <p className="text-lg font-black text-green-400">₹{winningBalance}</p>
           </div>
 
           <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
             <p className="text-[10px] text-zinc-400">Total</p>
             <p className="text-lg font-black text-white">₹{totalBalance}</p>
           </div>
+        </div>
+
+        <div className="bg-zinc-950 border border-yellow-500/20 rounded-xl p-3 mb-3">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-lg font-black text-yellow-400">Wallet History</h2>
+              <p className="text-[11px] text-zinc-500">Latest transactions</p>
+            </div>
+
+            <span className="text-[10px] bg-yellow-400/10 text-yellow-400 px-3 py-1 rounded-full font-black">
+              LIVE
+            </span>
+          </div>
+
+          {history.length === 0 ? (
+            <div className="bg-black border border-zinc-800 rounded-xl p-4 text-center">
+              <p className="text-sm text-zinc-400">Abhi koi wallet history nahi hai.</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+              {history.map((tx) => {
+                const style = txStyle(tx.type);
+
+                return (
+                  <div
+                    key={tx.id}
+                    className={`bg-black border ${style.border} rounded-xl p-3`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-white">
+                          {style.icon} {tx.title}
+                        </p>
+                        <p className="text-[11px] text-zinc-500 mt-1">
+                          {formatDate(tx.created_at)} • {tx.status}
+                        </p>
+                        <p className="text-[10px] text-zinc-600 mt-1">
+                          Balance After: ₹{Number(tx.balance_after || 0)}
+                        </p>
+                      </div>
+
+                      <p className={`text-lg font-black ${style.amountClass}`}>
+                        {formatAmount(Number(tx.amount || 0))}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="bg-yellow-400/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
@@ -283,8 +403,7 @@ export default function ProfilePage() {
           </div>
 
           <p className="text-[11px] text-zinc-500 mt-2">
-            Friend first deposit karega to aapko 5% bonus Deposit Balance me
-            milega.
+            Friend first deposit karega to aapko 5% bonus milega.
           </p>
         </div>
 
@@ -292,31 +411,20 @@ export default function ProfilePage() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h2 className="text-lg font-black text-white">KYC Documents</h2>
-              <p className="text-[11px] text-zinc-500">
-                Aadhaar aur PAN card upload karo.
-              </p>
+              <p className="text-[11px] text-zinc-500">Aadhaar aur PAN upload karo.</p>
             </div>
 
-            <span
-              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${kycClass()}`}
-            >
+            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${kycClass()}`}>
               {kycStatus}
             </span>
           </div>
 
           <div className="grid grid-cols-1 gap-3">
             <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">
-                Aadhaar Card
+              <p className="text-sm font-bold text-zinc-300 mb-2">Aadhaar Card</p>
+              <p className={`text-xs ${aadhaarUrl ? "text-green-400" : "text-zinc-500"}`}>
+                {aadhaarUrl ? "Aadhaar uploaded ✅" : "Aadhaar upload nahi hai."}
               </p>
-
-              {aadhaarUrl ? (
-                <p className="text-xs text-green-400">Aadhaar uploaded ✅</p>
-              ) : (
-                <p className="text-xs text-zinc-500 mb-2">
-                  Aadhaar upload nahi hai.
-                </p>
-              )}
 
               <input
                 type="file"
@@ -328,21 +436,14 @@ export default function ProfilePage() {
                 className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
               />
 
-              {uploadingAadhaar && (
-                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
-              )}
+              {uploadingAadhaar && <p className="text-xs text-yellow-400 mt-2">Uploading...</p>}
             </div>
 
             <div className="bg-black border border-zinc-800 rounded-xl p-3">
               <p className="text-sm font-bold text-zinc-300 mb-2">PAN Card</p>
-
-              {panUrl ? (
-                <p className="text-xs text-green-400">PAN uploaded ✅</p>
-              ) : (
-                <p className="text-xs text-zinc-500 mb-2">
-                  PAN card upload nahi hai.
-                </p>
-              )}
+              <p className={`text-xs ${panUrl ? "text-green-400" : "text-zinc-500"}`}>
+                {panUrl ? "PAN uploaded ✅" : "PAN card upload nahi hai."}
+              </p>
 
               <input
                 type="file"
@@ -354,9 +455,7 @@ export default function ProfilePage() {
                 className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
               />
 
-              {uploadingPan && (
-                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
-              )}
+              {uploadingPan && <p className="text-xs text-yellow-400 mt-2">Uploading...</p>}
             </div>
           </div>
         </div>
@@ -374,9 +473,9 @@ export default function ProfilePage() {
             </button>
           </Link>
 
-          <Link href="/history">
+          <Link href="/battle-history">
             <button className="w-full bg-zinc-800 text-white rounded-lg py-3 font-bold text-sm">
-              History
+              Battle History
             </button>
           </Link>
 
