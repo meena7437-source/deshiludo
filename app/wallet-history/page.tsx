@@ -80,6 +80,19 @@ export default function WalletHistoryPage() {
     setHistory((data || []) as WalletTx[]);
   }
 
+  function cleanTitle(tx: WalletTx) {
+    if (tx.type === "battle_cancel_refund") return "Cancel Refund";
+    if (tx.type === "battle_create") return "Join Battle";
+    if (tx.type === "battle_join") return "Join Battle";
+    if (tx.type === "battle_win") return "Battle Win";
+    if (tx.type === "deposit") return "Deposit";
+    if (tx.type === "first_deposit_bonus") return "First Deposit Bonus";
+    if (tx.type === "referral_bonus") return "Referral Bonus";
+    if (tx.type === "withdraw_request") return "Withdraw";
+    if (tx.type === "withdraw_refund") return "Withdraw Reject Refund";
+    return tx.title || tx.type || "Wallet Entry";
+  }
+
   function txStyle(tx: WalletTx) {
     if (tx.direction === "minus") {
       return {
@@ -112,11 +125,13 @@ export default function WalletHistoryPage() {
 
   function formatDate(date: string) {
     return new Date(date).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
       day: "2-digit",
       month: "short",
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     });
   }
 
@@ -177,7 +192,7 @@ export default function WalletHistoryPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-sm font-black text-white">
-                        {style.icon} {tx.title || tx.type}
+                        {style.icon} {cleanTitle(tx)}
                       </p>
 
                       <p className="text-[11px] text-zinc-500 mt-1">
