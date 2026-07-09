@@ -312,12 +312,6 @@ export default function ProfilePage() {
               <p className="text-[11px] text-zinc-500">DeshiLudo Player</p>
             </div>
           </div>
-
-          <Link href="/dashboard">
-            <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs font-bold">
-              Dashboard
-            </button>
-          </Link>
         </div>
 
         <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
@@ -519,31 +513,19 @@ export default function ProfilePage() {
             </button>
           </Link>
 
-          <Link href="/battle-history">
-            <button className="w-full bg-zinc-800 text-white rounded-lg py-3 font-bold text-sm">
-              Battle History
-            </button>
-          </Link>
-
-          <Link href="/dashboard">
-            <button className="w-full bg-zinc-800 text-white rounded-lg py-3 font-bold text-sm">
-              Dashboard
-            </button>
-          </Link>
-
           <Link href="/support">
             <button className="w-full bg-blue-600 text-white rounded-lg py-3 font-black text-sm">
               Help & Support
             </button>
           </Link>
-        </div>
 
-        <button
-          onClick={logout}
-          className="w-full bg-red-600 text-white rounded-lg py-3 font-black text-sm"
-        >
-          Logout
-        </button>
+          <button
+            onClick={logout}
+            className="w-full bg-red-600 text-white rounded-lg py-3 font-black text-sm"
+          >
+            Logout
+          </button>
+        </div>
       </div>
     </main>
   );
