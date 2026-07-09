@@ -82,6 +82,13 @@ export default function JoinBattlePage() {
       return;
     }
 
+    const totalBalance = depositBalance + winningBalance;
+
+    if (Number(battle.amount) > totalBalance) {
+      toast.error("Insufficient balance");
+      return;
+    }
+
     setJoiningId(battle.id);
 
     try {
@@ -102,24 +109,25 @@ export default function JoinBattlePage() {
         return;
       }
 
+      if (data === "battle_not_open") {
+        toast.error("Battle open nahi hai");
+        await loadPageData();
+        return;
+      }
+
       if (data === "already_joined") {
         toast.error("Ye battle already kisi ne join kar li");
         await loadPageData();
         return;
       }
 
-      if (data === "own_battle") {
+      if (data === "cannot_join_own_battle") {
         toast.error("Apni battle khud join nahi kar sakte");
         return;
       }
 
-      if (data === "wallet_not_found") {
-        toast.error("Wallet nahi mila");
-        return;
-      }
-
-      if (data === "low_balance") {
-        toast.error("Insufficient deposit balance");
+      if (data === "insufficient_balance") {
+        toast.error("Insufficient balance");
         await loadPageData();
         return;
       }
@@ -138,6 +146,8 @@ export default function JoinBattlePage() {
     }
   }
 
+  const totalBalance = depositBalance + winningBalance;
+
   return (
     <main className="min-h-screen bg-black text-white px-4 py-5">
       <div className="max-w-xl mx-auto">
@@ -155,14 +165,14 @@ export default function JoinBattlePage() {
                 Join Battle
               </h1>
               <p className="text-zinc-400 text-sm mt-1">
-                Open battle choose karo aur join karo.
+                Pehle deposit se, baaki winning se deduct hoga.
               </p>
             </div>
 
             <div className="bg-zinc-950 border border-zinc-800 rounded-2xl px-3 py-2 text-right">
-              <p className="text-[11px] text-zinc-500">Deposit</p>
+              <p className="text-[11px] text-zinc-500">Total</p>
               <p className="text-lg font-black text-yellow-400">
-                ₹{depositBalance}
+                ₹{totalBalance}
               </p>
             </div>
           </div>
@@ -194,9 +204,6 @@ export default function JoinBattlePage() {
           {loading ? (
             <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-center">
               <p className="font-bold">Loading battles...</p>
-              <p className="text-zinc-500 text-sm mt-1">
-                Open battles check ho rahi hain.
-              </p>
             </div>
           ) : battles.length === 0 ? (
             <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-5 text-center">
@@ -215,7 +222,14 @@ export default function JoinBattlePage() {
           ) : (
             <div className="space-y-3">
               {battles.map((battle) => {
-                const canJoin = depositBalance >= Number(battle.amount || 0);
+                const amount = Number(battle.amount || 0);
+                const canJoin = totalBalance >= amount;
+
+                const depositUsed = Math.min(depositBalance, amount);
+                const winningUsed = Math.max(amount - depositBalance, 0);
+
+                const afterDeposit = depositBalance - depositUsed;
+                const afterWinning = winningBalance - winningUsed;
 
                 return (
                   <div
@@ -244,17 +258,31 @@ export default function JoinBattlePage() {
                       </p>
                     </div>
 
-                    <div className="mt-3 flex justify-between text-sm">
-                      <span className="text-zinc-400">
-                        After Join Deposit
-                      </span>
-                      <span
-                        className={`font-bold ${
-                          canJoin ? "text-yellow-400" : "text-red-400"
-                        }`}
-                      >
-                        ₹{depositBalance - Number(battle.amount || 0)}
-                      </span>
+                    <div className="mt-3 text-sm space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Deposit se katega</span>
+                        <span className="font-bold text-green-400">
+                          ₹{depositUsed}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between">
+                        <span className="text-zinc-400">Winning se katega</span>
+                        <span className="font-bold text-yellow-400">
+                          ₹{winningUsed}
+                        </span>
+                      </div>
+
+                      <div className="border-t border-zinc-800 pt-2 flex justify-between">
+                        <span className="text-zinc-400">After Join</span>
+                        <span
+                          className={`font-bold ${
+                            canJoin ? "text-yellow-400" : "text-red-400"
+                          }`}
+                        >
+                          D ₹{afterDeposit} / W ₹{afterWinning}
+                        </span>
+                      </div>
                     </div>
 
                     <button
@@ -266,7 +294,7 @@ export default function JoinBattlePage() {
                         ? "Joining..."
                         : canJoin
                         ? "Join Battle"
-                        : "Low Deposit Balance"}
+                        : "Low Balance"}
                     </button>
                   </div>
                 );
@@ -275,7 +303,8 @@ export default function JoinBattlePage() {
           )}
 
           <p className="text-xs text-zinc-500 text-center mt-5">
-            Join karte hi amount deposit balance se deduct ho jayega.
+            Join karte hi pehle deposit balance se, baaki winning balance se
+            deduct hoga.
           </p>
         </div>
       </div>

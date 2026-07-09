@@ -19,6 +19,7 @@ export default function AdminDashboardPage() {
     pendingDeposits: 0,
     pendingWithdraws: 0,
     pendingKyc: 0,
+    openSupport: 0,
   });
 
   useEffect(() => {
@@ -46,6 +47,11 @@ export default function AdminDashboardPage() {
         { event: "*", schema: "public", table: "users" },
         () => loadStats()
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "support_tickets" },
+        () => loadStats()
+      )
       .subscribe();
 
     return () => {
@@ -71,6 +77,10 @@ export default function AdminDashboardPage() {
     const { data: withdraws } = await supabase
       .from("withdraws")
       .select("amount,status");
+
+    const { data: supportTickets } = await supabase
+      .from("support_tickets")
+      .select("status");
 
     setStats({
       totalUsers: users?.length || 0,
@@ -113,6 +123,9 @@ export default function AdminDashboardPage() {
           (u: any) =>
             u.kyc_status === "pending" && (u.aadhaar_url || u.pan_url)
         ).length || 0,
+
+      openSupport:
+        supportTickets?.filter((t: any) => t.status === "open").length || 0,
     });
   }
 
@@ -151,6 +164,12 @@ export default function AdminDashboardPage() {
       href: "/admin/kyc",
       color: "border-purple-500/30 bg-purple-500/10 text-purple-300",
     },
+    {
+      title: "Help & Support",
+      desc: `${stats.openSupport} open tickets`,
+      href: "/admin/support",
+      color: "border-yellow-500/30 bg-yellow-500/10 text-yellow-300",
+    },
   ];
 
   const cards = [
@@ -164,6 +183,7 @@ export default function AdminDashboardPage() {
     ["⏳", "Pending Deposits", stats.pendingDeposits, "text-yellow-300"],
     ["⚠️", "Pending Withdraws", stats.pendingWithdraws, "text-red-300"],
     ["🪪", "Pending KYC", stats.pendingKyc, "text-purple-300"],
+    ["🎧", "Open Support", stats.openSupport, "text-yellow-300"],
   ];
 
   return (
@@ -181,7 +201,7 @@ export default function AdminDashboardPage() {
               </h1>
 
               <p className="mt-1 text-sm text-zinc-500">
-                Live stats, payments, KYC aur battles management.
+                Live stats, payments, KYC, support aur battles management.
               </p>
             </div>
 
@@ -193,7 +213,7 @@ export default function AdminDashboardPage() {
             </button>
           </div>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
+          <div className="mt-5 grid grid-cols-3 gap-3">
             <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
               <p className="text-xs text-green-300">Approved Deposits</p>
               <p className="mt-1 text-2xl font-black text-green-400">
@@ -207,10 +227,17 @@ export default function AdminDashboardPage() {
                 ₹{stats.totalWithdraws}
               </p>
             </div>
+
+            <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+              <p className="text-xs text-yellow-300">Open Support</p>
+              <p className="mt-1 text-2xl font-black text-yellow-400">
+                {stats.openSupport}
+              </p>
+            </div>
           </div>
         </section>
 
-        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-5">
           {mainActions.map((item) => (
             <Link
               key={item.href}
@@ -226,12 +253,13 @@ export default function AdminDashboardPage() {
 
         {(stats.pendingDeposits > 0 ||
           stats.pendingWithdraws > 0 ||
-          stats.pendingKyc > 0) && (
+          stats.pendingKyc > 0 ||
+          stats.openSupport > 0) && (
           <section className="mb-6 rounded-[24px] border border-yellow-400/30 bg-yellow-400/10 p-4">
             <p className="font-black text-yellow-300">Pending Alert ⚠️</p>
             <p className="mt-1 text-sm text-zinc-300">
-              {stats.pendingDeposits} deposit, {stats.pendingWithdraws} withdraw
-              aur {stats.pendingKyc} KYC request pending hai.
+              {stats.pendingDeposits} deposit, {stats.pendingWithdraws} withdraw,
+              {stats.pendingKyc} KYC aur {stats.openSupport} support ticket open hai.
             </p>
           </section>
         )}

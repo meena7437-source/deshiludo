@@ -360,6 +360,12 @@ export default function ProfilePage() {
               Dashboard
             </button>
           </Link>
+
+          <Link href="/support">
+            <button className="w-full bg-blue-600 text-white rounded-lg py-3 font-black text-sm">
+              Help & Support
+            </button>
+          </Link>
         </div>
 
         <button

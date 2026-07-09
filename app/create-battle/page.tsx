@@ -56,6 +56,7 @@ export default function CreateBattlePage() {
     }
 
     const battleAmount = Number(amount);
+    const totalBalance = depositBalance + winningBalance;
 
     if (!amount || battleAmount <= 0) {
       toast.error("Valid amount enter karo");
@@ -72,8 +73,8 @@ export default function CreateBattlePage() {
       return;
     }
 
-    if (battleAmount > depositBalance) {
-      toast.error("Insufficient deposit balance");
+    if (battleAmount > totalBalance) {
+      toast.error("Insufficient balance");
       return;
     }
 
@@ -101,7 +102,13 @@ export default function CreateBattlePage() {
   }
 
   const battleAmount = Number(amount || 0);
-  const afterCreate = depositBalance - battleAmount;
+  const totalBalance = depositBalance + winningBalance;
+
+  const depositUsed = Math.min(depositBalance, battleAmount);
+  const winningUsed = Math.max(battleAmount - depositBalance, 0);
+
+  const afterDeposit = depositBalance - depositUsed;
+  const afterWinning = winningBalance - winningUsed;
 
   return (
     <main className="min-h-screen bg-black text-white px-4 py-5">
@@ -120,14 +127,14 @@ export default function CreateBattlePage() {
                 Create Battle
               </h1>
               <p className="text-zinc-400 text-sm mt-1">
-                Deposit balance se battle create hoga.
+                Pehle deposit balance se, baaki winning balance se deduct hoga.
               </p>
             </div>
 
             <div className="bg-zinc-950 border border-zinc-800 rounded-2xl px-3 py-2 text-right">
-              <p className="text-[11px] text-zinc-500">Deposit</p>
+              <p className="text-[11px] text-zinc-500">Total Balance</p>
               <p className="text-lg font-black text-green-400">
-                {walletLoading ? "..." : `₹${depositBalance}`}
+                {walletLoading ? "..." : `₹${totalBalance}`}
               </p>
             </div>
           </div>
@@ -166,7 +173,7 @@ export default function CreateBattlePage() {
                 <button
                   key={value}
                   onClick={() => setAmount(String(value))}
-                  disabled={value > depositBalance}
+                  disabled={value > totalBalance}
                   className={`py-2 rounded-xl text-sm font-black border disabled:opacity-40 ${
                     Number(amount) === value
                       ? "bg-yellow-400 text-black border-yellow-400"
@@ -186,21 +193,33 @@ export default function CreateBattlePage() {
             </div>
 
             <div className="flex justify-between text-sm mb-2">
-              <span className="text-zinc-400">Deposit Balance</span>
-              <span className="font-bold text-green-400">
-                ₹{depositBalance}
-              </span>
+              <span className="text-zinc-400">Deposit se katega</span>
+              <span className="font-bold text-green-400">₹{depositUsed}</span>
             </div>
 
-            <div className="border-t border-zinc-800 pt-3 mt-3 flex justify-between">
-              <span className="text-zinc-400">After Create</span>
-              <span
-                className={`font-black ${
-                  afterCreate < 0 ? "text-red-400" : "text-yellow-400"
-                }`}
-              >
-                ₹{afterCreate}
-              </span>
+            <div className="flex justify-between text-sm mb-2">
+              <span className="text-zinc-400">Winning se katega</span>
+              <span className="font-bold text-yellow-400">₹{winningUsed}</span>
+            </div>
+
+            <div className="border-t border-zinc-800 pt-3 mt-3">
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-zinc-400">After Deposit</span>
+                <span className="font-black text-green-400">
+                  ₹{afterDeposit}
+                </span>
+              </div>
+
+              <div className="flex justify-between text-sm">
+                <span className="text-zinc-400">After Winning</span>
+                <span
+                  className={`font-black ${
+                    afterWinning < 0 ? "text-red-400" : "text-yellow-400"
+                  }`}
+                >
+                  ₹{afterWinning}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -213,8 +232,8 @@ export default function CreateBattlePage() {
           </button>
 
           <p className="text-xs text-zinc-500 text-center mt-4">
-            Minimum ₹100. Amount ₹50 ke multiple me hona chahiye. Battle amount
-            deposit balance se deduct hoga.
+            Minimum ₹100. Amount ₹50 ke multiple me hona chahiye. Pehle deposit
+            balance se, baaki winning balance se deduct hoga.
           </p>
         </div>
       </div>

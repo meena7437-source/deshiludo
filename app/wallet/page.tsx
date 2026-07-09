@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 
 export default function WalletPage() {
@@ -8,12 +9,22 @@ export default function WalletPage() {
   return (
     <main className="min-h-screen bg-[#050510] text-white pb-24">
       <div className="mx-auto max-w-md px-4 pt-4">
-
         <div className="rounded-[28px] border border-green-400/20 bg-gradient-to-br from-zinc-950 via-black to-zinc-900 p-5 shadow-[0_0_35px_rgba(34,197,94,0.12)]">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold text-green-300">DESHILUDO</p>
-              <h1 className="text-3xl font-black text-white">Wallet</h1>
+            <div className="flex items-center gap-3">
+              <Image
+                src="/logo.png"
+                alt="DeshiLudo Logo"
+                width={48}
+                height={48}
+                className="rounded-full border border-yellow-400/40 object-cover"
+                priority
+              />
+
+              <div>
+                <p className="text-xs font-bold text-green-300">DESHILUDO</p>
+                <h1 className="text-3xl font-black text-white">Wallet</h1>
+              </div>
             </div>
 
             <button
