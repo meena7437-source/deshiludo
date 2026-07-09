@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -17,15 +18,17 @@ function makeReferralCode(phoneNumber: string) {
   return `DL${last4}${random}`;
 }
 
+function getErrorMessage(err: unknown) {
+  return err instanceof Error ? err.message : "Something went wrong";
+}
+
 export default function LoginPage() {
   const router = useRouter();
-
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [referralCode, setReferralCode] = useState("");
-
   const [confirmation, setConfirmation] =
     useState<ConfirmationResult | null>(null);
 
@@ -66,9 +69,9 @@ export default function LoginPage() {
 
       setConfirmation(result);
       toast.success("OTP sent successfully");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(err?.message || "OTP send failed");
+      toast.error(getErrorMessage(err));
     } finally {
       setSending(false);
     }
@@ -153,9 +156,9 @@ export default function LoginPage() {
 
       toast.success("Login successful");
       router.push("/dashboard");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      toast.error(err?.message || "Login failed");
+      toast.error(getErrorMessage(err));
     } finally {
       setVerifying(false);
     }
@@ -164,9 +167,24 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-black flex items-center justify-center p-4">
       <div className="bg-zinc-900 p-6 rounded-2xl w-full max-w-sm border border-zinc-800">
-        <h1 className="text-3xl font-bold text-yellow-400 mb-6 text-center">
-          Login
+        <div className="flex justify-center mb-4">
+          <Image
+            src="/logo.png"
+            alt="DeshiLudo"
+            width={105}
+            height={105}
+            priority
+            className="rounded-2xl"
+          />
+        </div>
+
+        <h1 className="text-3xl font-bold text-yellow-400 mb-1 text-center">
+          DeshiLudo
         </h1>
+
+        <p className="text-center text-gray-400 text-sm mb-6">
+          OTP se login karo
+        </p>
 
         <input
           type="tel"
