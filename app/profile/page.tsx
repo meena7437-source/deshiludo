@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -191,7 +192,17 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center">
-        <p className="text-yellow-400 font-bold">Loading Profile...</p>
+        <div className="flex flex-col items-center gap-3">
+          <Image
+            src="/logo.png"
+            alt="DeshiLudo Logo"
+            width={76}
+            height={76}
+            className="rounded-full border border-yellow-400/50 object-cover"
+            priority
+          />
+          <p className="text-yellow-400 font-bold">Loading Profile...</p>
+        </div>
       </main>
     );
   }
@@ -202,7 +213,21 @@ export default function ProfilePage() {
     <main className="min-h-screen bg-black text-white p-3">
       <div className="max-w-xl mx-auto">
         <div className="flex items-center justify-between mb-3">
-          <h1 className="text-2xl font-black text-yellow-400">Profile</h1>
+          <div className="flex items-center gap-3">
+            <Image
+              src="/logo.png"
+              alt="DeshiLudo"
+              width={48}
+              height={48}
+              className="rounded-full border border-yellow-400/40 object-cover"
+              priority
+            />
+
+            <div>
+              <h1 className="text-2xl font-black text-yellow-400">Profile</h1>
+              <p className="text-[11px] text-zinc-500">DeshiLudo Player</p>
+            </div>
+          </div>
 
           <Link href="/dashboard">
             <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs font-bold">
