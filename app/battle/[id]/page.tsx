@@ -7,37 +7,51 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../../../lib/firebase";
 import { supabase } from "../../../lib/supabase";
 
+type PlayerInfo = {
+  username: string;
+  name: string;
+  phone: string;
+};
+
 export default function BattlePage() {
   const router = useRouter();
   const params = useParams();
-  const battleId = params.id as string;
+  const battleId = String(params.id || "");
 
   const [battle, setBattle] = useState<any>(null);
+  const [creatorInfo, setCreatorInfo] = useState<PlayerInfo>({
+    username: "",
+    name: "",
+    phone: "",
+  });
+  const [joinerInfo, setJoinerInfo] = useState<PlayerInfo>({
+    username: "",
+    name: "",
+    phone: "",
+  });
+
   const [file, setFile] = useState<File | null>(null);
   const [roomCode, setRoomCode] = useState("");
   const [claim, setClaim] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [savingRoom, setSavingRoom] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [authReady, setAuthReady] = useState(false);
-  const [playerProfiles, setPlayerProfiles] = useState<Record<string, any>>({});
 
   const lastBattleRef = useRef<any>(null);
 
   useEffect(() => {
-    let battleChannel: any = null;
+    let channel: any = null;
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setAuthReady(true);
-
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         router.replace("/login");
         return;
       }
 
-      loadBattle(true);
+      await loadBattle(true);
 
-      battleChannel = supabase
+      channel = supabase
         .channel(`battle-live-${battleId}`)
         .on(
           "postgres_changes",
@@ -49,12 +63,12 @@ export default function BattlePage() {
           },
           async (payload) => {
             const updatedBattle: any = payload.new;
-            if (!updatedBattle?.id) return;
+
+            if (!updatedBattle) return;
 
             const oldBattle = lastBattleRef.current;
-            const currentUser = auth.currentUser;
 
-            if (oldBattle && currentUser) {
+            if (oldBattle) {
               if (!oldBattle.joiner_uid && updatedBattle.joiner_uid) {
                 toast("Opponent battle join kar chuka hai 🔔");
               }
@@ -67,7 +81,7 @@ export default function BattlePage() {
                 oldBattle.status !== "completed" &&
                 updatedBattle.status === "completed"
               ) {
-                if (updatedBattle.winner_uid === currentUser.uid) {
+                if (updatedBattle.winner_uid === user.uid) {
                   toast.success("Aap battle jeet gaye 🎉");
                 } else {
                   toast.error("Aap battle haar gaye");
@@ -89,99 +103,77 @@ export default function BattlePage() {
               setRoomCode(updatedBattle.room_code);
             }
 
-            if (currentUser) {
-              if (
-                updatedBattle.creator_uid === currentUser.uid &&
-                updatedBattle.creator_claim
-              ) {
-                setClaim(updatedBattle.creator_claim);
-              } else if (
-                updatedBattle.joiner_uid === currentUser.uid &&
-                updatedBattle.joiner_claim
-              ) {
-                setClaim(updatedBattle.joiner_claim);
-              }
+            if (
+              updatedBattle.creator_uid === user.uid &&
+              updatedBattle.creator_claim
+            ) {
+              setClaim(updatedBattle.creator_claim);
             }
 
-            await loadPlayerProfiles(updatedBattle);
+            if (
+              updatedBattle.joiner_uid === user.uid &&
+              updatedBattle.joiner_claim
+            ) {
+              setClaim(updatedBattle.joiner_claim);
+            }
+
+            await loadPlayerNames(updatedBattle);
           }
         )
         .subscribe();
     });
 
     return () => {
-      unsubscribeAuth();
+      unsubscribe();
 
-      if (battleChannel) {
-        supabase.removeChannel(battleChannel);
+      if (channel) {
+        supabase.removeChannel(channel);
       }
     };
   }, [battleId, router]);
 
-  async function loadPlayerProfiles(battleData: any) {
-    const uids = [battleData?.creator_uid, battleData?.joiner_uid].filter(
+  async function loadPlayerNames(battleData: any) {
+    const userIds = [battleData?.creator_uid, battleData?.joiner_uid].filter(
       Boolean
-    ) as string[];
+    );
 
-    if (uids.length === 0) {
-      setPlayerProfiles({});
-      return;
-    }
+    if (userIds.length === 0) return;
 
     const { data, error } = await supabase
       .from("users")
-      .select("*")
-      .in("uid", uids);
+      .select("firebase_uid,username,name,phone")
+      .in("firebase_uid", userIds);
 
     if (error) {
-      console.error("Player profile load error:", error.message);
+      console.error("Player profile load error:", error);
       return;
     }
 
-    const nextProfiles: Record<string, any> = {};
+    const creator = data?.find(
+      (item: any) => item.firebase_uid === battleData.creator_uid
+    );
 
-    for (const profile of data || []) {
-      if (profile?.uid) {
-        nextProfiles[profile.uid] = profile;
-      }
-    }
+    const joiner = data?.find(
+      (item: any) => item.firebase_uid === battleData.joiner_uid
+    );
 
-    setPlayerProfiles(nextProfiles);
-  }
+    setCreatorInfo({
+      username: creator?.username || "",
+      name: creator?.name || "",
+      phone: creator?.phone || battleData.creator_phone || "",
+    });
 
-  function getPlayerName(role: "creator" | "joiner") {
-    if (!battle) return role === "creator" ? "Player 1" : "Player 2";
-
-    const uid =
-      role === "creator" ? battle.creator_uid : battle.joiner_uid;
-
-    if (!uid) return "Waiting...";
-
-    const profile = playerProfiles[uid] || {};
-
-    const name =
-      (role === "creator"
-        ? battle.creator_name || battle.creator_username
-        : battle.joiner_name || battle.joiner_username) ||
-      profile.name ||
-      profile.full_name ||
-      profile.username;
-
-    const phone =
-      (role === "creator" ? battle.creator_phone : battle.joiner_phone) ||
-      profile.phone ||
-      profile.mobile;
-
-    return name || phone || `${uid.slice(0, 6)}...`;
+    setJoinerInfo({
+      username: joiner?.username || "",
+      name: joiner?.name || "",
+      phone: joiner?.phone || battleData.joiner_phone || "",
+    });
   }
 
   async function loadBattle(showLoader = false) {
     const user = auth.currentUser;
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+    if (!user) return;
 
     if (showLoader) setLoading(true);
 
@@ -200,15 +192,16 @@ export default function BattlePage() {
 
     if (!data) {
       toast.error("Battle not found");
-      router.push("/battle-history");
+      router.replace("/battle-history");
       return;
     }
 
     lastBattleRef.current = data;
     setBattle(data);
-    await loadPlayerProfiles(data);
 
-    if (data.room_code) setRoomCode(data.room_code);
+    if (data.room_code) {
+      setRoomCode(data.room_code);
+    }
 
     if (data.creator_uid === user.uid && data.creator_claim) {
       setClaim(data.creator_claim);
@@ -217,20 +210,23 @@ export default function BattlePage() {
     if (data.joiner_uid === user.uid && data.joiner_claim) {
       setClaim(data.joiner_claim);
     }
+
+    await loadPlayerNames(data);
   }
 
   function isCreator() {
-    return auth.currentUser && battle?.creator_uid === auth.currentUser.uid;
+    return auth.currentUser?.uid === battle?.creator_uid;
   }
 
   function isJoiner() {
-    return auth.currentUser && battle?.joiner_uid === auth.currentUser.uid;
+    return auth.currentUser?.uid === battle?.joiner_uid;
   }
 
   function myResultUploaded() {
     if (!battle) return false;
-    if (isCreator()) return !!battle.creator_result_uploaded;
-    if (isJoiner()) return !!battle.joiner_result_uploaded;
+    if (isCreator()) return Boolean(battle.creator_result_uploaded);
+    if (isJoiner()) return Boolean(battle.joiner_result_uploaded);
+
     return false;
   }
 
@@ -238,12 +234,31 @@ export default function BattlePage() {
     const amount = Number(battle?.amount || 0);
     const totalPot = amount * 2;
     const commission = Math.floor(totalPot * 0.1);
+
     return totalPot - commission;
   }
 
   function getCommission() {
-    const amount = Number(battle?.amount || 0);
-    return Math.floor(amount * 2 * 0.1);
+    return Math.floor(Number(battle?.amount || 0) * 2 * 0.1);
+  }
+
+  function maskPhone(value?: string | null) {
+    const digits = String(value || "").replace(/\D/g, "");
+    const last4 = digits.slice(-4);
+
+    return last4 ? `XXXXXX${last4}` : "";
+  }
+
+  function playerLabel(info: PlayerInfo, fallback: string) {
+    if (info.username.trim()) {
+      return `@${info.username.trim()}`;
+    }
+
+    if (info.name.trim()) {
+      return info.name.trim();
+    }
+
+    return maskPhone(info.phone) || fallback;
   }
 
   async function autoSettleBattle() {
@@ -294,7 +309,7 @@ export default function BattlePage() {
 
     if (data === "battle_not_found") {
       toast.error("Battle nahi mili");
-      router.push("/battle-history");
+      router.replace("/battle-history");
     }
   }
 
@@ -320,7 +335,10 @@ export default function BattlePage() {
 
     const { error } = await supabase
       .from("battles")
-      .update({ room_code: roomCode.trim(), status: "running" })
+      .update({
+        room_code: roomCode.trim(),
+        status: "running",
+      })
       .eq("id", battleId)
       .not("status", "in", '("completed","cancelled")');
 
@@ -353,7 +371,7 @@ export default function BattlePage() {
     const user = auth.currentUser;
 
     if (!user) {
-      router.push("/login");
+      router.replace("/login");
       return;
     }
 
@@ -448,9 +466,9 @@ export default function BattlePage() {
 
       await autoSettleBattle();
       setFile(null);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err?.message || "Result submit failed");
+    } catch (error: any) {
+      console.error("Result submit error:", error);
+      toast.error(error?.message || "Result submit failed");
     } finally {
       setUploading(false);
     }
@@ -458,17 +476,17 @@ export default function BattlePage() {
 
   function statusClass(status: string) {
     if (status === "open")
-      return "bg-blue-500/15 text-blue-300 border-blue-500/30";
+      return "border-blue-500/30 bg-blue-500/15 text-blue-300";
     if (status === "matched")
-      return "bg-purple-500/15 text-purple-300 border-purple-500/30";
+      return "border-purple-500/30 bg-purple-500/15 text-purple-300";
     if (status === "running")
-      return "bg-yellow-500/15 text-yellow-300 border-yellow-500/30";
+      return "border-yellow-500/30 bg-yellow-500/15 text-yellow-300";
     if (status === "completed")
-      return "bg-green-500/15 text-green-300 border-green-500/30";
+      return "border-green-500/30 bg-green-500/15 text-green-300";
     if (status === "cancelled")
-      return "bg-red-500/15 text-red-300 border-red-500/30";
+      return "border-red-500/30 bg-red-500/15 text-red-300";
 
-    return "bg-zinc-500/15 text-zinc-300 border-zinc-500/30";
+    return "border-zinc-500/30 bg-zinc-500/15 text-zinc-300";
   }
 
   function claimBadge(value: string | null) {
@@ -476,15 +494,18 @@ export default function BattlePage() {
     if (value === "win") return "Win Claim";
     if (value === "lose") return "Lose Claim";
     if (value === "cancel") return "Cancel Claim";
+
     return value;
   }
 
-  if (!authReady || loading) {
+  if (loading) {
     return (
-      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
+      <main className="flex min-h-screen items-center justify-center bg-[#07070b] p-4 text-white">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
-          <p className="text-zinc-400 font-semibold">Battle loading...</p>
+          <div className="mx-auto mb-3 h-9 w-9 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+          <p className="text-sm font-semibold text-zinc-400">
+            Battle loading...
+          </p>
         </div>
       </main>
     );
@@ -492,9 +513,9 @@ export default function BattlePage() {
 
   if (!battle) {
     return (
-      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
-        <div className="rounded-3xl border border-red-500/30 bg-red-500/10 p-6 text-center">
-          <p className="text-red-300 font-bold">Battle not found</p>
+      <main className="flex min-h-screen items-center justify-center bg-[#07070b] p-4 text-white">
+        <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-5 text-center">
+          <p className="font-bold text-red-300">Battle not found</p>
         </div>
       </main>
     );
@@ -512,18 +533,20 @@ export default function BattlePage() {
 
   return (
     <main className="min-h-screen bg-[#07070b] text-white">
-      <div className="mx-auto max-w-xl px-4 py-5">
-        <div className="mb-5 rounded-[28px] border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
-          <div className="flex items-start justify-between gap-3">
+      <div className="mx-auto w-full max-w-md px-3 py-3">
+        <section className="mb-3 rounded-2xl border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-3.5 shadow-xl shadow-black/40">
+          <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-400">
+              <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-yellow-400">
                 DeshiLudo Battle
               </p>
-              <h1 className="mt-2 text-3xl font-black">Battle #{battleId}</h1>
+              <h1 className="mt-1 text-2xl font-black leading-tight">
+                Battle #{battleId}
+              </h1>
             </div>
 
             <span
-              className={`rounded-full border px-3 py-1 text-xs font-bold uppercase ${statusClass(
+              className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${statusClass(
                 battle.status
               )}`}
             >
@@ -531,46 +554,50 @@ export default function BattlePage() {
             </span>
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-3">
-              <p className="text-xs text-zinc-500">Entry</p>
-              <p className="mt-1 text-xl font-black text-green-400">
+          <div className="mt-3 grid grid-cols-3 gap-1.5">
+            <div className="rounded-xl border border-zinc-800 bg-black/50 p-2.5">
+              <p className="text-[9px] text-zinc-500">Entry</p>
+              <p className="mt-0.5 text-base font-black text-green-400">
                 ₹{battle.amount}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-3">
-              <p className="text-xs text-zinc-500">Winning</p>
-              <p className="mt-1 text-xl font-black text-yellow-400">
+            <div className="rounded-xl border border-zinc-800 bg-black/50 p-2.5">
+              <p className="text-[9px] text-zinc-500">Winning</p>
+              <p className="mt-0.5 text-base font-black text-yellow-400">
                 ₹{getWinningAmount()}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/50 p-3">
-              <p className="text-xs text-zinc-500">Fee</p>
-              <p className="mt-1 text-xl font-black text-red-400">
+            <div className="rounded-xl border border-zinc-800 bg-black/50 p-2.5">
+              <p className="text-[9px] text-zinc-500">Fee</p>
+              <p className="mt-0.5 text-base font-black text-red-400">
                 ₹{getCommission()}
               </p>
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
-              <p className="text-xs text-zinc-500">Creator</p>
-              <p className="mt-1 break-words font-bold text-white">{getPlayerName("creator")}</p>
-              <p className="mt-2 text-xs text-zinc-400">
+          <div className="mt-2.5 grid grid-cols-2 gap-2">
+            <div className="min-w-0 rounded-xl border border-zinc-800 bg-zinc-950/80 p-3">
+              <p className="text-[9px] text-zinc-500">Creator</p>
+              <p className="mt-0.5 truncate text-sm font-bold text-white">
+                {playerLabel(creatorInfo, "Player 1")}
+              </p>
+              <p className="mt-1 text-[10px] text-zinc-400">
                 {battle.creator_result_uploaded
                   ? claimBadge(battle.creator_claim)
                   : "Waiting result"}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
-              <p className="text-xs text-zinc-500">Joiner</p>
-              <p className="mt-1 font-bold text-white">
-                {getPlayerName("joiner")}
+            <div className="min-w-0 rounded-xl border border-zinc-800 bg-zinc-950/80 p-3">
+              <p className="text-[9px] text-zinc-500">Joiner</p>
+              <p className="mt-0.5 truncate text-sm font-bold text-white">
+                {battle.joiner_uid
+                  ? playerLabel(joinerInfo, "Player 2")
+                  : "Waiting..."}
               </p>
-              <p className="mt-2 text-xs text-zinc-400">
+              <p className="mt-1 text-[10px] text-zinc-400">
                 {battle.joiner_result_uploaded
                   ? claimBadge(battle.joiner_claim)
                   : battle.joiner_uid
@@ -580,17 +607,18 @@ export default function BattlePage() {
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
-            <div className="flex items-center justify-between">
+          <div className="mt-2.5 rounded-xl border border-zinc-800 bg-zinc-950/80 p-3">
+            <div className="flex items-center justify-between gap-2">
               <div>
-                <p className="text-xs text-zinc-500">You are</p>
-                <p className="font-bold">
+                <p className="text-[9px] text-zinc-500">You are</p>
+                <p className="text-sm font-bold">
                   {isCreator() ? "Creator" : isJoiner() ? "Joiner" : "Viewer"}
                 </p>
               </div>
+
               <div className="text-right">
-                <p className="text-xs text-zinc-500">Opponent</p>
-                <p className="font-bold">
+                <p className="text-[9px] text-zinc-500">Opponent</p>
+                <p className="text-sm font-bold">
                   {battle.joiner_uid ? "Joined ✅" : "Waiting..."}
                 </p>
               </div>
@@ -598,45 +626,48 @@ export default function BattlePage() {
           </div>
 
           {adminReview && (
-            <div className="mt-4 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4">
-              <p className="font-bold text-yellow-300">
+            <div className="mt-2.5 rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3">
+              <p className="text-sm font-bold text-yellow-300">
                 Admin Review Required ⚠️
               </p>
-              <p className="mt-1 text-xs text-zinc-400">
-                Dono players ne result submit kar diya hai. Admin decision required.
+              <p className="mt-0.5 text-[10px] text-zinc-400">
+                Dono players ne result submit kar diya hai.
               </p>
             </div>
           )}
 
           {battle.status === "completed" && (
-            <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/10 p-4">
-              <p className="font-bold text-green-300">Winner Selected ✅</p>
-              <p className="mt-1 break-all text-xs text-zinc-400">
+            <div className="mt-2.5 rounded-xl border border-green-500/30 bg-green-500/10 p-3">
+              <p className="text-sm font-bold text-green-300">
+                Winner Selected ✅
+              </p>
+              <p className="mt-0.5 truncate text-[10px] text-zinc-400">
                 {battle.winner_uid}
               </p>
             </div>
           )}
 
           {battle.status === "cancelled" && (
-            <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4">
-              <p className="font-bold text-red-300">
+            <div className="mt-2.5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+              <p className="text-sm font-bold text-red-300">
                 Battle Cancelled / Refunded ✅
               </p>
             </div>
           )}
-        </div>
+        </section>
 
-        <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
-          <div className="mb-4 flex items-center justify-between">
+        <section className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3.5">
+          <div className="mb-3 flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-xl font-black text-yellow-400">
+              <h2 className="text-lg font-black text-yellow-400">
                 Ludo Room Code
               </h2>
-              <p className="mt-1 text-sm text-zinc-500">
+              <p className="mt-0.5 text-[10px] text-zinc-500">
                 Creator room code save karega.
               </p>
             </div>
-            <div className="rounded-full bg-yellow-400/10 px-3 py-1 text-xs font-bold text-yellow-300">
+
+            <div className="rounded-full bg-yellow-400/10 px-2.5 py-1 text-[9px] font-bold text-yellow-300">
               LIVE
             </div>
           </div>
@@ -644,11 +675,11 @@ export default function BattlePage() {
           {isCreator() ? (
             <>
               {!battle.joiner_uid ? (
-                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+                <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
                   Waiting for player to join...
                 </div>
               ) : battle.room_code ? (
-                <div className="rounded-2xl border border-yellow-400/30 bg-black p-5 text-center text-3xl font-black tracking-[0.25em] text-yellow-300">
+                <div className="rounded-xl border border-yellow-400/30 bg-black p-3 text-center text-2xl font-black tracking-[0.2em] text-yellow-300">
                   {battle.room_code}
                 </div>
               ) : (
@@ -657,14 +688,15 @@ export default function BattlePage() {
                     type="text"
                     placeholder="Room code enter karo"
                     value={roomCode}
-                    onChange={(e) => setRoomCode(e.target.value)}
-                    className="mb-3 w-full rounded-2xl border border-zinc-800 bg-black p-4 text-white outline-none focus:border-yellow-400"
+                    onChange={(event) => setRoomCode(event.target.value)}
+                    className="mb-2.5 w-full rounded-xl border border-zinc-800 bg-black p-3 text-sm text-white outline-none focus:border-yellow-400"
                   />
 
                   <button
+                    type="button"
                     onClick={saveRoomCode}
                     disabled={savingRoom}
-                    className="w-full rounded-2xl bg-yellow-400 py-4 font-black text-black disabled:bg-zinc-800 disabled:text-zinc-500"
+                    className="w-full rounded-xl bg-yellow-400 py-3 text-sm font-black text-black disabled:bg-zinc-800 disabled:text-zinc-500"
                   >
                     {savingRoom ? "Saving..." : "Save Room Code"}
                   </button>
@@ -672,15 +704,16 @@ export default function BattlePage() {
               )}
             </>
           ) : (
-            <div className="rounded-2xl border border-zinc-800 bg-black p-5 text-center text-3xl font-black tracking-[0.25em] text-yellow-300">
+            <div className="rounded-xl border border-zinc-800 bg-black p-3 text-center text-2xl font-black tracking-[0.2em] text-yellow-300">
               {battle.room_code || "Waiting..."}
             </div>
           )}
 
           {battle.room_code && (
             <button
+              type="button"
               onClick={copyRoomCode}
-              className="mt-3 w-full rounded-2xl border border-yellow-400/40 bg-yellow-400/10 py-4 font-black text-yellow-300"
+              className="mt-2.5 w-full rounded-xl border border-yellow-400/40 bg-yellow-400/10 py-3 text-sm font-black text-yellow-300"
             >
               Copy Room Code
             </button>
@@ -688,35 +721,40 @@ export default function BattlePage() {
         </section>
 
         {battle.room_code && !battleClosed ? (
-          <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
-            <h2 className="text-xl font-black text-yellow-400">
+          <section className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3.5">
+            <h2 className="text-lg font-black text-yellow-400">
               Submit Result
             </h2>
-            <p className="mt-1 text-sm text-zinc-500">
-              Win par screenshot zaroori hai. Lose/Cancel par screenshot nahi lagega.
+
+            <p className="mt-0.5 text-[10px] text-zinc-500">
+              Win पर screenshot जरूरी है। Lose/Cancel पर नहीं।
             </p>
 
             {!userIsPlayer && (
-              <div className="mt-4 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+              <div className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300">
                 Aap is battle ke player nahi ho.
               </div>
             )}
 
             {myResultUploaded() ? (
-              <div className="mt-4 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-300">
+              <div className="mt-3 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-xs text-green-300">
                 Aap result already submit kar chuke ho ✅
               </div>
             ) : (
               <>
-                <div className="mt-5 grid grid-cols-3 gap-2">
+                <div className="mt-3 grid grid-cols-3 gap-1.5">
                   {["win", "lose", "cancel"].map((item) => (
                     <button
                       key={item}
+                      type="button"
                       onClick={() => {
                         setClaim(item);
-                        if (item !== "win") setFile(null);
+
+                        if (item !== "win") {
+                          setFile(null);
+                        }
                       }}
-                      className={`rounded-2xl py-4 text-sm font-black uppercase ${
+                      className={`rounded-xl py-3 text-xs font-black uppercase ${
                         claim === item
                           ? item === "win"
                             ? "bg-green-500 text-white"
@@ -732,26 +770,30 @@ export default function BattlePage() {
                 </div>
 
                 {claim === "win" && (
-                  <label className="mt-4 block rounded-2xl border border-dashed border-zinc-700 bg-black p-4 text-center">
+                  <label className="mt-3 block rounded-xl border border-dashed border-zinc-700 bg-black p-3 text-center">
                     <input
                       type="file"
                       accept="image/*"
-                      onChange={(e) => setFile(e.target.files?.[0] || null)}
+                      onChange={(event) =>
+                        setFile(event.target.files?.[0] || null)
+                      }
                       className="hidden"
                     />
-                    <p className="font-bold text-zinc-200">
+
+                    <p className="truncate text-xs font-bold text-zinc-200">
                       {file ? file.name : "Tap to select screenshot"}
                     </p>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      Win claim ke liye screenshot zaroori hai.
+                    <p className="mt-0.5 text-[9px] text-zinc-500">
+                      Win claim के लिए screenshot जरूरी है।
                     </p>
                   </label>
                 )}
 
                 <button
+                  type="button"
                   onClick={submitResult}
                   disabled={uploading || !userIsPlayer}
-                  className="mt-4 w-full rounded-2xl bg-green-500 py-4 font-black text-white shadow-lg shadow-green-500/20 disabled:bg-zinc-800 disabled:text-zinc-500"
+                  className="mt-3 w-full rounded-xl bg-green-500 py-3 text-sm font-black text-white disabled:bg-zinc-800 disabled:text-zinc-500"
                 >
                   {uploading ? "Submitting..." : "Submit Result"}
                 </button>
@@ -759,8 +801,8 @@ export default function BattlePage() {
             )}
           </section>
         ) : (
-          <section className="mb-5 rounded-[28px] border border-zinc-800 bg-zinc-950 p-5">
-            <p className="text-zinc-400">
+          <section className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3.5">
+            <p className="text-xs text-zinc-400">
               {battleClosed
                 ? "Battle closed hai."
                 : "Room code save hone ke baad result submit option aayega."}
@@ -769,8 +811,9 @@ export default function BattlePage() {
         )}
 
         <button
+          type="button"
           onClick={() => router.push("/battle-history")}
-          className="w-full rounded-2xl border border-zinc-800 bg-zinc-900 py-4 font-black text-white"
+          className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-3 text-sm font-black text-white"
         >
           Back to Battle History
         </button>

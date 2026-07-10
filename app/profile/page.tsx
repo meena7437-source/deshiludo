@@ -16,12 +16,18 @@ export default function ProfilePage() {
   const [phone, setPhone] = useState("");
   const [balance, setBalance] = useState(0);
 
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [savedName, setSavedName] = useState("");
+  const [savedUsername, setSavedUsername] = useState("");
+
   const [referralCode, setReferralCode] = useState("");
   const [kycStatus, setKycStatus] = useState("pending");
   const [aadhaarUrl, setAadhaarUrl] = useState("");
   const [panUrl, setPanUrl] = useState("");
 
   const [loading, setLoading] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAadhaar, setUploadingAadhaar] = useState(false);
   const [uploadingPan, setUploadingPan] = useState(false);
 
@@ -90,6 +96,7 @@ export default function ProfilePage() {
       .maybeSingle();
 
     if (error) {
+      console.error("Wallet load error:", error);
       toast.error("Wallet load nahi hua");
       return;
     }
@@ -97,21 +104,19 @@ export default function ProfilePage() {
     setBalance(Number(data?.balance || 0));
   }
 
-  async function loadProfile(
-    userId: string,
-    userPhone: string
-  ) {
+  async function loadProfile(userId: string, userPhone: string) {
     await loadWallet(userId);
 
     const { data, error } = await supabase
       .from("users")
       .select(
-        "referral_code, aadhaar_url, pan_url, kyc_status"
+        "name,username,referral_code,aadhaar_url,pan_url,kyc_status"
       )
       .eq("firebase_uid", userId)
       .maybeSingle();
 
     if (error) {
+      console.error("Profile load error:", error);
       toast.error("Profile load nahi hua");
       return;
     }
@@ -129,14 +134,112 @@ export default function ProfilePage() {
         .eq("firebase_uid", userId);
 
       if (referralError) {
+        console.error("Referral save error:", referralError);
         toast.error("Referral code save nahi hua");
       }
     }
+
+    const loadedName = data?.name || "";
+    const loadedUsername = data?.username || "";
+
+    setName(loadedName);
+    setUsername(loadedUsername);
+    setSavedName(loadedName);
+    setSavedUsername(loadedUsername);
 
     setReferralCode(code || "");
     setAadhaarUrl(data?.aadhaar_url || "");
     setPanUrl(data?.pan_url || "");
     setKycStatus(data?.kyc_status || "pending");
+  }
+
+  async function saveBasicProfile() {
+    if (!uid) {
+      toast.error("Login session missing");
+      return;
+    }
+
+    const cleanName = name.trim().replace(/\s+/g, " ");
+    const cleanUsername = username.trim().toLowerCase();
+
+    if (cleanName.length < 2) {
+      toast.error("Name kam se kam 2 letters ka hona chahiye");
+      return;
+    }
+
+    if (cleanName.length > 50) {
+      toast.error("Name 50 letters se chhota rakho");
+      return;
+    }
+
+    if (cleanUsername.length < 4 || cleanUsername.length > 20) {
+      toast.error("Username 4 se 20 characters ka hona chahiye");
+      return;
+    }
+
+    if (!/^[a-z0-9_]+$/.test(cleanUsername)) {
+      toast.error(
+        "Username me sirf small letters, numbers aur underscore use karo"
+      );
+      return;
+    }
+
+    setSavingProfile(true);
+
+    try {
+      const { data: existingUser, error: checkError } = await supabase
+        .from("users")
+        .select("firebase_uid")
+        .eq("username", cleanUsername)
+        .neq("firebase_uid", uid)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error("Username check error:", checkError);
+        toast.error("Username check nahi hua");
+        return;
+      }
+
+      if (existingUser) {
+        toast.error("Ye username pehle se use ho raha hai");
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("users")
+        .update({
+          name: cleanName,
+          username: cleanUsername,
+        })
+        .eq("firebase_uid", uid);
+
+      if (updateError) {
+        console.error("Profile update error:", updateError);
+
+        if (
+          updateError.code === "23505" ||
+          updateError.message.toLowerCase().includes("duplicate")
+        ) {
+          toast.error("Ye username pehle se use ho raha hai");
+          return;
+        }
+
+        toast.error(updateError.message || "Profile save nahi hua");
+        return;
+      }
+
+      setName(cleanName);
+      setUsername(cleanUsername);
+      setSavedName(cleanName);
+      setSavedUsername(cleanUsername);
+
+      toast.success("Name aur username save ho gaya ✅");
+    } catch (error: any) {
+      console.error("Profile save error:", error);
+      toast.error(error?.message || "Profile save nahi hua");
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
   async function uploadKycDoc(
@@ -191,6 +294,7 @@ export default function ProfilePage() {
           : "PAN upload ho gaya"
       );
     } catch (error: any) {
+      console.error("KYC upload error:", error);
       toast.error(error?.message || "Upload failed");
     } finally {
       setUploadingAadhaar(false);
@@ -220,14 +324,14 @@ export default function ProfilePage() {
 
   function kycClass() {
     if (kycStatus === "approved") {
-      return "text-green-400 bg-green-500/10 border border-green-500/30";
+      return "border border-green-500/30 bg-green-500/10 text-green-400";
     }
 
     if (kycStatus === "rejected") {
-      return "text-red-400 bg-red-500/10 border border-red-500/30";
+      return "border border-red-500/30 bg-red-500/10 text-red-400";
     }
 
-    return "text-yellow-400 bg-yellow-500/10 border border-yellow-500/30";
+    return "border border-yellow-500/30 bg-yellow-500/10 text-yellow-400";
   }
 
   function kycMessage() {
@@ -242,6 +346,10 @@ export default function ProfilePage() {
     return "KYC verification pending hai.";
   }
 
+  const profileChanged =
+    name.trim().replace(/\s+/g, " ") !== savedName ||
+    username.trim().toLowerCase() !== savedUsername;
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-black text-white">
@@ -249,13 +357,13 @@ export default function ProfilePage() {
           <Image
             src="/logo.png"
             alt="DeshiLudo Logo"
-            width={76}
-            height={76}
+            width={64}
+            height={64}
             className="rounded-full border border-yellow-400/50 object-cover"
             priority
           />
 
-          <p className="font-bold text-yellow-400">
+          <p className="text-sm font-bold text-yellow-400">
             Loading Profile...
           </p>
         </div>
@@ -264,134 +372,202 @@ export default function ProfilePage() {
   }
 
   return (
-    <main className="min-h-screen bg-black p-3 pb-24 text-white">
-      <div className="mx-auto max-w-xl">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+    <main className="min-h-screen bg-black px-3 pb-20 pt-3 text-white">
+      <div className="mx-auto w-full max-w-md">
+        <header className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
             <Image
               src="/logo.png"
               alt="DeshiLudo"
-              width={48}
-              height={48}
-              className="rounded-full border border-yellow-400/40 object-cover"
+              width={42}
+              height={42}
+              className="h-[42px] w-[42px] shrink-0 rounded-full border border-yellow-400/40 object-cover"
               priority
             />
 
-            <div>
-              <h1 className="text-2xl font-black text-yellow-400">
+            <div className="min-w-0">
+              <h1 className="text-xl font-black leading-tight text-yellow-400">
                 Profile
               </h1>
 
-              <p className="text-[11px] text-zinc-500">
-                DeshiLudo Player
+              <p className="truncate text-[10px] text-zinc-500">
+                {savedUsername
+                  ? `@${savedUsername}`
+                  : savedName || "DeshiLudo Player"}
               </p>
             </div>
           </div>
 
-          <Link href="/dashboard">
-            <button className="rounded-lg bg-zinc-800 px-3 py-2 text-xs font-bold text-white">
-              Back
-            </button>
+          <Link
+            href="/dashboard"
+            className="shrink-0 rounded-lg bg-zinc-800 px-3 py-2 text-[11px] font-bold text-white"
+          >
+            Back
           </Link>
-        </div>
+        </header>
 
-        <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-          <p className="text-xs text-zinc-400">
+        <section className="mb-3 rounded-2xl border border-yellow-500/20 bg-zinc-950 p-3">
+          <div className="mb-2.5">
+            <h2 className="text-sm font-black text-white">
+              Player Details
+            </h2>
+
+            <p className="mt-0.5 text-[10px] text-zinc-500">
+              Battle me username dikhaya jayega.
+            </p>
+          </div>
+
+          <label className="text-[10px] font-bold text-zinc-400">
+            Name
+          </label>
+
+          <input
+            type="text"
+            value={name}
+            maxLength={50}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Apna naam daalo"
+            disabled={savingProfile}
+            className="mb-2.5 mt-1 w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-60"
+          />
+
+          <label className="text-[10px] font-bold text-zinc-400">
+            Unique Username
+          </label>
+
+          <div className="relative mt-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-zinc-500">
+              @
+            </span>
+
+            <input
+              type="text"
+              value={username}
+              maxLength={20}
+              onChange={(event) =>
+                setUsername(
+                  event.target.value
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_]/g, "")
+                )
+              }
+              placeholder="sher123"
+              disabled={savingProfile}
+              className="w-full rounded-xl border border-zinc-800 bg-black py-2.5 pl-7 pr-3 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-60"
+            />
+          </div>
+
+          <p className="mt-1 text-[9px] text-zinc-600">
+            4–20 characters • small letters, numbers aur underscore
+          </p>
+
+          <button
+            type="button"
+            onClick={saveBasicProfile}
+            disabled={savingProfile || !profileChanged}
+            className="mt-3 w-full rounded-xl bg-yellow-400 py-2.5 text-sm font-black text-black disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+          >
+            {savingProfile ? "Saving..." : "Save Name & Username"}
+          </button>
+        </section>
+
+        <section className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+          <p className="text-[10px] text-zinc-400">
             Mobile Number
           </p>
 
-          <p className="text-lg font-black text-white">
+          <p className="mt-0.5 text-base font-black text-white">
             {phone || "User"}
           </p>
 
-          <p className="mt-1 break-all text-[10px] text-zinc-600">
+          <p className="mt-1 truncate text-[9px] text-zinc-600">
             UID: {uid}
           </p>
-        </div>
+        </section>
 
-        <div className="mb-3 rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/15 via-zinc-950 to-black p-4">
-          <div className="flex items-center justify-between">
+        <section className="mb-3 rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/15 via-zinc-950 to-black p-3">
+          <div className="flex items-center justify-between gap-2">
             <div>
-              <p className="text-xs font-bold text-green-300">
+              <p className="text-[10px] font-bold text-green-300">
                 Wallet Balance
               </p>
 
-              <p className="mt-1 text-3xl font-black text-green-400">
-                ₹{balance}
+              <p className="mt-0.5 text-2xl font-black text-green-400">
+                ₹{balance.toLocaleString("en-IN")}
               </p>
             </div>
 
-            <span className="rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-[10px] font-black text-green-400">
+            <span className="rounded-full border border-green-500/30 bg-green-500/10 px-2.5 py-1 text-[9px] font-black text-green-400">
               SINGLE WALLET
             </span>
           </div>
-        </div>
+        </section>
 
-        <Link href="/wallet-history">
-          <button className="mb-3 w-full rounded-xl border border-yellow-500/30 bg-zinc-950 py-3 text-sm font-black text-yellow-400">
-            Wallet History →
-          </button>
+        <Link
+          href="/wallet-history"
+          className="mb-3 block w-full rounded-xl border border-yellow-500/30 bg-zinc-950 py-2.5 text-center text-sm font-black text-yellow-400"
+        >
+          Wallet History →
         </Link>
 
-        <div className="mb-3 rounded-xl border border-yellow-500/30 bg-yellow-400/10 p-3">
-          <p className="text-xs text-zinc-400">
+        <section className="mb-3 rounded-xl border border-yellow-500/30 bg-yellow-400/10 p-3">
+          <p className="text-[10px] text-zinc-400">
             Referral Code
           </p>
 
           <div className="mt-1 flex items-center justify-between gap-2">
-            <p className="break-all text-xl font-black text-yellow-400">
+            <p className="min-w-0 truncate text-lg font-black text-yellow-400">
               {referralCode || "Generating..."}
             </p>
 
             <button
+              type="button"
               onClick={copyReferral}
-              className="rounded-lg bg-yellow-400 px-3 py-2 text-xs font-black text-black"
+              className="shrink-0 rounded-lg bg-yellow-400 px-3 py-2 text-[11px] font-black text-black"
             >
               Copy
             </button>
           </div>
 
-          <p className="mt-2 text-[11px] text-zinc-500">
+          <p className="mt-1.5 text-[10px] text-zinc-500">
             Friend first deposit karega to aapko 5% bonus milega.
           </p>
-        </div>
+        </section>
 
-        <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        <section className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+          <div className="mb-2.5 flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-lg font-black text-white">
+              <h2 className="text-base font-black text-white">
                 KYC Documents
               </h2>
 
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[10px] text-zinc-500">
                 Aadhaar aur PAN upload karo.
               </p>
             </div>
 
             <span
-              className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${kycClass()}`}
+              className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase ${kycClass()}`}
             >
               {kycStatus}
             </span>
           </div>
 
-          <div className="mb-3 rounded-lg border border-zinc-800 bg-black p-2">
-            <p className="text-[11px] text-zinc-400">
+          <div className="mb-2.5 rounded-lg border border-zinc-800 bg-black p-2">
+            <p className="text-[10px] text-zinc-400">
               {kycMessage()}
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3">
-            <div className="rounded-xl border border-zinc-800 bg-black p-3">
-              <p className="mb-2 text-sm font-bold text-zinc-300">
+          <div className="grid grid-cols-1 gap-2">
+            <div className="rounded-xl border border-zinc-800 bg-black p-2.5">
+              <p className="text-xs font-bold text-zinc-300">
                 Aadhaar Card
               </p>
 
               <p
-                className={`text-xs ${
-                  aadhaarUrl
-                    ? "text-green-400"
-                    : "text-zinc-500"
+                className={`mt-1 text-[10px] ${
+                  aadhaarUrl ? "text-green-400" : "text-zinc-500"
                 }`}
               >
                 {aadhaarUrl
@@ -413,27 +589,25 @@ export default function ProfilePage() {
 
                     event.target.value = "";
                   }}
-                  className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black disabled:opacity-60"
+                  className="mt-2.5 w-full text-[10px] text-zinc-400 file:mr-2 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-[10px] file:font-black file:text-black disabled:opacity-60"
                 />
               )}
 
               {uploadingAadhaar && (
-                <p className="mt-2 text-xs text-yellow-400">
+                <p className="mt-1.5 text-[10px] text-yellow-400">
                   Uploading Aadhaar...
                 </p>
               )}
             </div>
 
-            <div className="rounded-xl border border-zinc-800 bg-black p-3">
-              <p className="mb-2 text-sm font-bold text-zinc-300">
+            <div className="rounded-xl border border-zinc-800 bg-black p-2.5">
+              <p className="text-xs font-bold text-zinc-300">
                 PAN Card
               </p>
 
               <p
-                className={`text-xs ${
-                  panUrl
-                    ? "text-green-400"
-                    : "text-zinc-500"
+                className={`mt-1 text-[10px] ${
+                  panUrl ? "text-green-400" : "text-zinc-500"
                 }`}
               >
                 {panUrl
@@ -455,41 +629,45 @@ export default function ProfilePage() {
 
                     event.target.value = "";
                   }}
-                  className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black disabled:opacity-60"
+                  className="mt-2.5 w-full text-[10px] text-zinc-400 file:mr-2 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-[10px] file:font-black file:text-black disabled:opacity-60"
                 />
               )}
 
               {uploadingPan && (
-                <p className="mt-2 text-xs text-yellow-400">
+                <p className="mt-1.5 text-[10px] text-yellow-400">
                   Uploading PAN...
                 </p>
               )}
             </div>
           </div>
-        </div>
+        </section>
 
-        <div className="mb-3 grid grid-cols-2 gap-2">
-          <Link href="/deposit">
-            <button className="w-full rounded-lg bg-yellow-400 py-3 text-sm font-black text-black">
-              Deposit
-            </button>
+        <div className="grid grid-cols-2 gap-2">
+          <Link
+            href="/deposit"
+            className="rounded-lg bg-yellow-400 py-2.5 text-center text-xs font-black text-black"
+          >
+            Deposit
           </Link>
 
-          <Link href="/withdraw">
-            <button className="w-full rounded-lg bg-green-500 py-3 text-sm font-black text-black">
-              Withdraw
-            </button>
+          <Link
+            href="/withdraw"
+            className="rounded-lg bg-green-500 py-2.5 text-center text-xs font-black text-black"
+          >
+            Withdraw
           </Link>
 
-          <Link href="/support">
-            <button className="w-full rounded-lg bg-blue-600 py-3 text-sm font-black text-white">
-              Help & Support
-            </button>
+          <Link
+            href="/support"
+            className="rounded-lg bg-blue-600 py-2.5 text-center text-xs font-black text-white"
+          >
+            Help & Support
           </Link>
 
           <button
+            type="button"
             onClick={logout}
-            className="w-full rounded-lg bg-red-600 py-3 text-sm font-black text-white"
+            className="rounded-lg bg-red-600 py-2.5 text-xs font-black text-white"
           >
             Logout
           </button>

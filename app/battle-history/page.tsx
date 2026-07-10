@@ -7,6 +7,12 @@ import toast from "react-hot-toast";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
+type PlayerProfile = {
+  username: string;
+  name: string;
+  phone: string;
+};
+
 export default function BattleHistoryPage() {
   const router = useRouter();
 
@@ -14,6 +20,9 @@ export default function BattleHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [currentUid, setCurrentUid] = useState("");
   const [filter, setFilter] = useState("all");
+  const [playerProfiles, setPlayerProfiles] = useState<
+    Record<string, PlayerProfile>
+  >({});
 
   useEffect(() => {
     let battlesChannel: any = null;
@@ -67,7 +76,75 @@ export default function BattleHistoryPage() {
       return;
     }
 
-    setBattles(data || []);
+    const battleRows = data || [];
+    setBattles(battleRows);
+
+    const ids = new Set<string>();
+
+    battleRows.forEach((battle: any) => {
+      if (battle.creator_uid) ids.add(battle.creator_uid);
+      if (battle.joiner_uid) ids.add(battle.joiner_uid);
+    });
+
+    if (ids.size === 0) {
+      setPlayerProfiles({});
+      return;
+    }
+
+    const { data: usersData, error: usersError } = await supabase
+      .from("users")
+      .select("firebase_uid,username,name,phone")
+      .in("firebase_uid", Array.from(ids));
+
+    if (usersError) {
+      console.error("Player profiles load error:", usersError);
+      return;
+    }
+
+    const profiles: Record<string, PlayerProfile> = {};
+
+    (usersData || []).forEach((item: any) => {
+      profiles[item.firebase_uid] = {
+        username: String(item.username || "").trim(),
+        name: String(item.name || "").trim(),
+        phone: String(item.phone || "").trim(),
+      };
+    });
+
+    setPlayerProfiles(profiles);
+  }
+
+  function maskPhone(value?: string | null) {
+    const digits = String(value || "").replace(/\D/g, "");
+    const last4 = digits.slice(-4);
+
+    return last4 ? `XXXXXX${last4}` : "";
+  }
+
+  function formatPlayerDisplay(
+    uidValue?: string | null,
+    fallbackName?: string | null,
+    fallbackPhone?: string | null
+  ) {
+    const profile = uidValue ? playerProfiles[uidValue] : undefined;
+
+    if (profile?.username) {
+      return `@${profile.username}`;
+    }
+
+    if (profile?.name) {
+      return profile.name;
+    }
+
+    if (fallbackName?.trim()) {
+      return fallbackName.trim();
+    }
+
+    return (
+      maskPhone(profile?.phone) ||
+      maskPhone(fallbackPhone) ||
+      "Player"
+    );
   }
 
   function getNetWinning(amount: number) {
@@ -355,9 +432,19 @@ export default function BattleHistoryPage() {
               const isCreator =
                 battle.creator_uid === currentUid;
 
-              const opponentPhone = isCreator
-                ? battle.joiner_phone || "Waiting"
-                : battle.creator_phone || "User";
+              const opponentDisplay = isCreator
+                ? battle.joiner_uid
+                  ? formatPlayerDisplay(
+                      battle.joiner_uid,
+                      battle.joiner_name,
+                      battle.joiner_phone
+                    )
+                  : "Waiting"
+                : formatPlayerDisplay(
+                    battle.creator_uid,
+                    battle.creator_name,
+                    battle.creator_phone
+                  );
 
               const cardBorder =
                 battle.status === "completed"
@@ -417,7 +504,7 @@ export default function BattleHistoryPage() {
                         Opponent
                       </p>
                       <p className="mt-0.5 truncate text-xs font-black">
-                        {opponentPhone}
+                        {opponentDisplay}
                       </p>
                     </div>
                   </div>

@@ -27,14 +27,24 @@ type Battle = {
   created_at: string;
 };
 
+type PlayerProfile = {
+  username: string;
+  name: string;
+  phone: string;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
 
   const [uid, setUid] = useState("");
   const [phone, setPhone] = useState("");
   const [balance, setBalance] = useState(0);
+  const [playerDisplay, setPlayerDisplay] = useState("");
 
   const [allBattles, setAllBattles] = useState<Battle[]>([]);
+  const [playerProfiles, setPlayerProfiles] = useState<
+    Record<string, PlayerProfile>
+  >({});
 
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<number | null>(null);
@@ -70,11 +80,11 @@ export default function DashboardPage() {
       }
 
       setUid(user.uid);
-      setPhone(user.phoneNumber || "User");
+      setPhone(user.phoneNumber || "");
 
       await Promise.all([
         loadWallet(user.uid),
-        loadBattles(),
+        loadBattles(user.uid),
       ]);
 
       battleChannel = supabase
@@ -87,7 +97,7 @@ export default function DashboardPage() {
             table: "battles",
           },
           () => {
-            loadBattles();
+            loadBattles(user.uid);
           }
         )
         .subscribe();
@@ -139,7 +149,7 @@ export default function DashboardPage() {
     setBalance(Number(data?.balance || 0));
   }
 
-  async function loadBattles() {
+  async function loadBattles(currentUserId?: string) {
     const { data, error } = await supabase
       .from("battles")
       .select(
@@ -165,7 +175,58 @@ export default function DashboardPage() {
       return;
     }
 
-    setAllBattles((data || []) as Battle[]);
+    const battleRows = (data || []) as Battle[];
+    setAllBattles(battleRows);
+
+    const ids = new Set<string>();
+
+    if (currentUserId) {
+      ids.add(currentUserId);
+    }
+
+    battleRows.forEach((battle) => {
+      if (battle.creator_uid) ids.add(battle.creator_uid);
+      if (battle.joiner_uid) ids.add(battle.joiner_uid);
+    });
+
+    if (ids.size === 0) {
+      setPlayerProfiles({});
+      return;
+    }
+
+    const { data: usersData, error: usersError } = await supabase
+      .from("users")
+      .select("firebase_uid,username,name,phone")
+      .in("firebase_uid", Array.from(ids));
+
+    if (usersError) {
+      console.error("Player profiles load error:", usersError);
+      return;
+    }
+
+    const profiles: Record<string, PlayerProfile> = {};
+
+    (usersData || []).forEach((item: any) => {
+      profiles[item.firebase_uid] = {
+        username: String(item.username || "").trim(),
+        name: String(item.name || "").trim(),
+        phone: String(item.phone || "").trim(),
+      };
+    });
+
+    setPlayerProfiles(profiles);
+
+    const currentProfile = currentUserId
+      ? profiles[currentUserId]
+      : undefined;
+
+    setPlayerDisplay(
+      formatPlayerDisplay(
+        currentProfile,
+        "",
+        auth.currentUser?.phoneNumber || ""
+      )
+    );
   }
 
   async function joinBattle(battleId: number) {
@@ -205,7 +266,7 @@ export default function DashboardPage() {
       toast.success("Battle joined successfully");
 
       await Promise.all([
-        loadBattles(),
+        loadBattles(user.uid),
         loadWallet(user.uid),
       ]);
 
@@ -253,7 +314,7 @@ export default function DashboardPage() {
       }
 
       await Promise.all([
-        loadBattles(),
+        loadBattles(user.uid),
         loadWallet(user.uid),
       ]);
     } catch (error: any) {
@@ -268,19 +329,54 @@ export default function DashboardPage() {
     router.replace("/login");
   }
 
-  function getCreatorDisplayName(battle: Battle) {
+  function maskPhone(value?: string | null) {
+    const digits = String(value || "").replace(/\D/g, "");
+    const last4 = digits.slice(-4);
+
+    return last4 ? `XXXXXX${last4}` : "";
+  }
+
+  function formatPlayerDisplay(
+    profile?: PlayerProfile,
+    fallbackName?: string | null,
+    fallbackPhone?: string | null
+  ) {
+    if (profile?.username) {
+      return `@${profile.username}`;
+    }
+
+    if (profile?.name) {
+      return profile.name;
+    }
+
+    if (fallbackName?.trim()) {
+      return fallbackName.trim();
+    }
+
     return (
-      battle.creator_name?.trim() ||
-      battle.creator_phone?.trim() ||
-      "Creator"
+      maskPhone(profile?.phone) ||
+      maskPhone(fallbackPhone) ||
+      "Player"
+    );
+  }
+
+  function getCreatorDisplayName(battle: Battle) {
+    return formatPlayerDisplay(
+      playerProfiles[battle.creator_uid],
+      battle.creator_name,
+      battle.creator_phone
     );
   }
 
   function getJoinerDisplayName(battle: Battle) {
-    return (
-      battle.joiner_name?.trim() ||
-      battle.joiner_phone?.trim() ||
-      "Joiner"
+    if (!battle.joiner_uid) {
+      return "Waiting";
+    }
+
+    return formatPlayerDisplay(
+      playerProfiles[battle.joiner_uid],
+      battle.joiner_name,
+      battle.joiner_phone
     );
   }
 
@@ -326,7 +422,7 @@ export default function DashboardPage() {
               </h1>
 
               <p className="mt-1 text-[10px] text-zinc-400">
-                {phone}
+                {playerDisplay || maskPhone(phone) || "Player"}
               </p>
             </div>
           </div>
