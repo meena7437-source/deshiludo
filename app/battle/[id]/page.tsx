@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../../../lib/firebase";
 import { supabase } from "../../../lib/supabase";
 
@@ -18,85 +19,161 @@ export default function BattlePage() {
   const [loading, setLoading] = useState(true);
   const [savingRoom, setSavingRoom] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [authReady, setAuthReady] = useState(false);
+  const [playerProfiles, setPlayerProfiles] = useState<Record<string, any>>({});
 
   const lastBattleRef = useRef<any>(null);
 
   useEffect(() => {
-    loadBattle(true);
+    let battleChannel: any = null;
 
-    const channel = supabase
-      .channel(`battle-live-${battleId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "battles",
-          filter: `id=eq.${battleId}`,
-        },
-        (payload) => {
-          const updatedBattle: any = payload.new;
-          if (!updatedBattle) return;
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setAuthReady(true);
 
-          const oldBattle = lastBattleRef.current;
-          const user = auth.currentUser;
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
 
-          if (oldBattle && user) {
-            if (!oldBattle.joiner_uid && updatedBattle.joiner_uid) {
-              toast("Opponent battle join kar chuka hai 🔔");
-            }
+      loadBattle(true);
 
-            if (!oldBattle.room_code && updatedBattle.room_code) {
-              toast.success("Room code add ho gaya ✅");
-            }
+      battleChannel = supabase
+        .channel(`battle-live-${battleId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "battles",
+            filter: `id=eq.${battleId}`,
+          },
+          async (payload) => {
+            const updatedBattle: any = payload.new;
+            if (!updatedBattle?.id) return;
 
-            if (
-              oldBattle.status !== "completed" &&
-              updatedBattle.status === "completed"
-            ) {
-              if (updatedBattle.winner_uid === user.uid) {
-                toast.success("Aap battle jeet gaye 🎉");
-              } else {
-                toast.error("Aap battle haar gaye");
+            const oldBattle = lastBattleRef.current;
+            const currentUser = auth.currentUser;
+
+            if (oldBattle && currentUser) {
+              if (!oldBattle.joiner_uid && updatedBattle.joiner_uid) {
+                toast("Opponent battle join kar chuka hai 🔔");
+              }
+
+              if (!oldBattle.room_code && updatedBattle.room_code) {
+                toast.success("Room code add ho gaya ✅");
+              }
+
+              if (
+                oldBattle.status !== "completed" &&
+                updatedBattle.status === "completed"
+              ) {
+                if (updatedBattle.winner_uid === currentUser.uid) {
+                  toast.success("Aap battle jeet gaye 🎉");
+                } else {
+                  toast.error("Aap battle haar gaye");
+                }
+              }
+
+              if (
+                oldBattle.status !== "cancelled" &&
+                updatedBattle.status === "cancelled"
+              ) {
+                toast.success("Battle cancel ho gayi, refund done ✅");
               }
             }
 
-            if (
-              oldBattle.status !== "cancelled" &&
-              updatedBattle.status === "cancelled"
-            ) {
-              toast.success("Battle cancel ho gayi, refund done ✅");
+            lastBattleRef.current = updatedBattle;
+            setBattle(updatedBattle);
+
+            if (updatedBattle.room_code) {
+              setRoomCode(updatedBattle.room_code);
             }
+
+            if (currentUser) {
+              if (
+                updatedBattle.creator_uid === currentUser.uid &&
+                updatedBattle.creator_claim
+              ) {
+                setClaim(updatedBattle.creator_claim);
+              } else if (
+                updatedBattle.joiner_uid === currentUser.uid &&
+                updatedBattle.joiner_claim
+              ) {
+                setClaim(updatedBattle.joiner_claim);
+              }
+            }
+
+            await loadPlayerProfiles(updatedBattle);
           }
-
-          lastBattleRef.current = updatedBattle;
-          setBattle(updatedBattle);
-
-          if (updatedBattle.room_code) setRoomCode(updatedBattle.room_code);
-
-          if (user) {
-            if (
-              updatedBattle.creator_uid === user.uid &&
-              updatedBattle.creator_claim
-            ) {
-              setClaim(updatedBattle.creator_claim);
-            }
-
-            if (
-              updatedBattle.joiner_uid === user.uid &&
-              updatedBattle.joiner_claim
-            ) {
-              setClaim(updatedBattle.joiner_claim);
-            }
-          }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubscribeAuth();
+
+      if (battleChannel) {
+        supabase.removeChannel(battleChannel);
+      }
     };
-  }, [battleId]);
+  }, [battleId, router]);
+
+  async function loadPlayerProfiles(battleData: any) {
+    const uids = [battleData?.creator_uid, battleData?.joiner_uid].filter(
+      Boolean
+    ) as string[];
+
+    if (uids.length === 0) {
+      setPlayerProfiles({});
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .in("uid", uids);
+
+    if (error) {
+      console.error("Player profile load error:", error.message);
+      return;
+    }
+
+    const nextProfiles: Record<string, any> = {};
+
+    for (const profile of data || []) {
+      if (profile?.uid) {
+        nextProfiles[profile.uid] = profile;
+      }
+    }
+
+    setPlayerProfiles(nextProfiles);
+  }
+
+  function getPlayerName(role: "creator" | "joiner") {
+    if (!battle) return role === "creator" ? "Player 1" : "Player 2";
+
+    const uid =
+      role === "creator" ? battle.creator_uid : battle.joiner_uid;
+
+    if (!uid) return "Waiting...";
+
+    const profile = playerProfiles[uid] || {};
+
+    const name =
+      (role === "creator"
+        ? battle.creator_name || battle.creator_username
+        : battle.joiner_name || battle.joiner_username) ||
+      profile.name ||
+      profile.full_name ||
+      profile.username;
+
+    const phone =
+      (role === "creator" ? battle.creator_phone : battle.joiner_phone) ||
+      profile.phone ||
+      profile.mobile;
+
+    return name || phone || `${uid.slice(0, 6)}...`;
+  }
 
   async function loadBattle(showLoader = false) {
     const user = auth.currentUser;
@@ -129,6 +206,7 @@ export default function BattlePage() {
 
     lastBattleRef.current = data;
     setBattle(data);
+    await loadPlayerProfiles(data);
 
     if (data.room_code) setRoomCode(data.room_code);
 
@@ -263,8 +341,12 @@ export default function BattlePage() {
       return;
     }
 
-    await navigator.clipboard.writeText(battle.room_code);
-    toast.success("Room code copied ✅");
+    try {
+      await navigator.clipboard.writeText(battle.room_code);
+      toast.success("Room code copied ✅");
+    } catch {
+      toast.error("Room code copy nahi hua");
+    }
   }
 
   async function submitResult() {
@@ -397,7 +479,7 @@ export default function BattlePage() {
     return value;
   }
 
-  if (loading) {
+  if (!authReady || loading) {
     return (
       <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
         <div className="text-center">
@@ -475,7 +557,7 @@ export default function BattlePage() {
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
               <p className="text-xs text-zinc-500">Creator</p>
-              <p className="mt-1 font-bold text-white">Player 1</p>
+              <p className="mt-1 break-words font-bold text-white">{getPlayerName("creator")}</p>
               <p className="mt-2 text-xs text-zinc-400">
                 {battle.creator_result_uploaded
                   ? claimBadge(battle.creator_claim)
@@ -486,7 +568,7 @@ export default function BattlePage() {
             <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
               <p className="text-xs text-zinc-500">Joiner</p>
               <p className="mt-1 font-bold text-white">
-                {battle.joiner_uid ? "Player 2" : "Waiting..."}
+                {getPlayerName("joiner")}
               </p>
               <p className="mt-2 text-xs text-zinc-400">
                 {battle.joiner_result_uploaded

@@ -13,18 +13,19 @@ export default function WithdrawPage() {
 
   const [uid, setUid] = useState("");
   const [phone, setPhone] = useState("");
-  const [depositBalance, setDepositBalance] = useState(0);
-  const [winningBalance, setWinningBalance] = useState(0);
+  const [balance, setBalance] = useState(0);
   const [kycStatus, setKycStatus] = useState("pending");
+
   const [amount, setAmount] = useState("");
   const [upiId, setUpiId] = useState("");
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
@@ -32,27 +33,26 @@ export default function WithdrawPage() {
       setPhone(user.phoneNumber || "");
 
       await Promise.all([loadWallet(user.uid), loadKyc(user.uid)]);
-
       setLoading(false);
     });
 
-    return () => unsub();
+    return () => unsubscribe();
   }, [router]);
 
   async function loadWallet(userId: string) {
     const { data, error } = await supabase
       .from("wallets")
-      .select("deposit_balance, winning_balance")
+      .select("balance")
       .eq("uid", userId)
       .maybeSingle();
 
     if (error) {
+      console.error("Wallet load error:", error);
       toast.error("Wallet load nahi hua");
       return;
     }
 
-    setDepositBalance(Number(data?.deposit_balance || 0));
-    setWinningBalance(Number(data?.winning_balance || 0));
+    setBalance(Number(data?.balance || 0));
   }
 
   async function loadKyc(userId: string) {
@@ -63,6 +63,7 @@ export default function WithdrawPage() {
       .maybeSingle();
 
     if (error) {
+      console.error("KYC load error:", error);
       setKycStatus("pending");
       return;
     }
@@ -72,14 +73,25 @@ export default function WithdrawPage() {
 
   async function submitWithdraw() {
     const withdrawAmount = Number(amount);
+    const cleanUpiId = upiId.trim();
+
+    if (!uid) {
+      toast.error("Login session missing");
+      return;
+    }
 
     if (kycStatus !== "approved") {
       toast.error("Withdraw ke liye KYC approved hona jaruri hai");
       return;
     }
 
-    if (!withdrawAmount || withdrawAmount <= 0) {
-      toast.error("Amount daalo");
+    if (!Number.isFinite(withdrawAmount) || withdrawAmount <= 0) {
+      toast.error("Valid amount daalo");
+      return;
+    }
+
+    if (!Number.isInteger(withdrawAmount)) {
+      toast.error("Withdraw amount poore rupaye me daalo");
       return;
     }
 
@@ -88,47 +100,68 @@ export default function WithdrawPage() {
       return;
     }
 
-    if (withdrawAmount > winningBalance) {
-      toast.error("Sirf Winning Balance withdraw ho sakta hai");
+    if (withdrawAmount > balance) {
+      toast.error("Wallet balance kam hai");
       return;
     }
 
-    if (!upiId.trim()) {
+    if (!cleanUpiId) {
       toast.error("UPI ID daalo");
+      return;
+    }
+
+    if (
+      cleanUpiId.length < 5 ||
+      !cleanUpiId.includes("@") ||
+      cleanUpiId.startsWith("@") ||
+      cleanUpiId.endsWith("@")
+    ) {
+      toast.error("Valid UPI ID daalo");
       return;
     }
 
     setSubmitting(true);
 
-    const { data, error } = await supabase.rpc("request_withdraw_safe", {
-      uid_input: uid,
-      phone_input: phone,
-      amount_input: withdrawAmount,
-      upi_input: upiId.trim(),
-    });
+    try {
+      const { data, error } = await supabase.rpc("request_withdraw_safe", {
+        uid_input: uid,
+        phone_input: phone,
+        amount_input: withdrawAmount,
+        upi_input: cleanUpiId,
+      });
 
-    setSubmitting(false);
+      if (error) {
+        console.error("Withdraw RPC error:", error);
+        toast.error(error.message || "Withdraw request failed");
+        return;
+      }
 
-    if (error) {
-      toast.error("Withdraw request failed");
-      return;
+      if (!data?.success) {
+        toast.error(data?.message || "Withdraw failed");
+        return;
+      }
+
+      toast.success(data.message || "Withdraw request submit ho gayi ✅");
+
+      setAmount("");
+      setUpiId("");
+
+      await loadWallet(uid);
+    } catch (error: any) {
+      console.error("Withdraw submit error:", error);
+      toast.error(error?.message || "Withdraw request failed");
+    } finally {
+      setSubmitting(false);
     }
-
-    if (!data?.success) {
-      toast.error(data?.message || "Withdraw failed");
-      return;
-    }
-
-    toast.success(data.message || "Withdraw request submit ho gayi");
-    setAmount("");
-    setUpiId("");
-    await loadWallet(uid);
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center">
-        <p className="text-yellow-400 font-bold">Loading Withdraw...</p>
+      <main className="flex min-h-screen items-center justify-center bg-black text-white">
+        <div className="text-center">
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+          <p className="font-bold text-yellow-400">Loading Withdraw...</p>
+        </div>
       </main>
     );
   }
@@ -136,23 +169,24 @@ export default function WithdrawPage() {
   const kycApproved = kycStatus === "approved";
 
   return (
-    <main className="min-h-screen bg-black text-white p-3">
-      <div className="max-w-xl mx-auto">
-        <div className="flex items-center justify-between mb-3">
+    <main className="min-h-screen bg-black p-3 text-white">
+      <div className="mx-auto max-w-xl">
+        <div className="mb-3 flex items-center justify-between">
           <h1 className="text-2xl font-black text-yellow-400">Withdraw</h1>
 
-          <Link href="/dashboard">
-            <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs">
-              Back
-            </button>
+          <Link
+            href="/dashboard"
+            className="rounded-lg bg-zinc-800 px-3 py-2 text-xs font-bold"
+          >
+            Back
           </Link>
         </div>
 
         <div
           className={`mb-3 rounded-xl border p-3 ${
             kycApproved
-              ? "bg-green-950/30 border-green-500/40"
-              : "bg-red-950/30 border-red-500/40"
+              ? "border-green-500/40 bg-green-950/30"
+              : "border-red-500/40 bg-red-950/30"
           }`}
         >
           <p
@@ -163,67 +197,63 @@ export default function WithdrawPage() {
             KYC Status: {kycStatus.toUpperCase()}
           </p>
 
-          <p className="text-[11px] text-zinc-400 mt-1">
+          <p className="mt-1 text-[11px] text-zinc-400">
             {kycApproved
               ? "Aapka withdraw enabled hai."
               : "Withdraw ke liye pehle KYC approved hona jaruri hai."}
           </p>
 
           {!kycApproved && (
-            <Link href="/profile">
-              <button className="mt-2 bg-yellow-400 text-black px-3 py-2 rounded-lg text-xs font-black">
-                Complete KYC
-              </button>
+            <Link
+              href="/profile"
+              className="mt-2 inline-block rounded-lg bg-yellow-400 px-3 py-2 text-xs font-black text-black"
+            >
+              Complete KYC
             </Link>
           )}
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          <div className="bg-zinc-950 border border-red-500/30 rounded-xl p-3">
-            <p className="text-zinc-400 text-xs">Deposit Balance</p>
-            <p className="text-xl font-black text-red-400">
-              ₹{depositBalance}
-            </p>
-            <p className="text-[10px] text-zinc-500 mt-1">
-              Withdraw blocked
-            </p>
-          </div>
-
-          <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
-            <p className="text-zinc-400 text-xs">Winning Balance</p>
-            <p className="text-xl font-black text-green-400">
-              ₹{winningBalance}
-            </p>
-            <p className="text-[10px] text-zinc-500 mt-1">
-              {kycApproved ? "Withdraw allowed" : "KYC required"}
-            </p>
-          </div>
+        <div className="mb-3 rounded-xl border border-green-500/30 bg-zinc-950 p-4">
+          <p className="text-xs text-zinc-400">Available Wallet Balance</p>
+          <p className="mt-1 text-2xl font-black text-green-400">
+            ₹{balance.toLocaleString("en-IN")}
+          </p>
+          <p className="mt-1 text-[10px] text-zinc-500">
+            {kycApproved ? "Withdraw allowed" : "KYC required"}
+          </p>
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3">
           <label className="text-xs text-zinc-400">Withdraw Amount</label>
+
           <input
             type="number"
+            min="100"
+            step="1"
+            inputMode="numeric"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(event) => setAmount(event.target.value)}
             placeholder="Minimum ₹100"
-            disabled={!kycApproved}
-            className="w-full mt-1 mb-3 p-2.5 rounded-lg bg-black border border-zinc-700 text-white outline-none text-sm disabled:opacity-50"
+            disabled={!kycApproved || submitting}
+            className="mb-3 mt-1 w-full rounded-lg border border-zinc-700 bg-black p-2.5 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-50"
           />
 
           <label className="text-xs text-zinc-400">UPI ID</label>
+
           <input
+            type="text"
             value={upiId}
-            onChange={(e) => setUpiId(e.target.value)}
+            onChange={(event) => setUpiId(event.target.value.replace(/\s/g, ""))}
             placeholder="example@upi"
-            disabled={!kycApproved}
-            className="w-full mt-1 mb-3 p-2.5 rounded-lg bg-black border border-zinc-700 text-white outline-none text-sm disabled:opacity-50"
+            disabled={!kycApproved || submitting}
+            className="mb-3 mt-1 w-full rounded-lg border border-zinc-700 bg-black p-2.5 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-50"
           />
 
           <button
+            type="button"
             onClick={submitWithdraw}
             disabled={submitting || !kycApproved}
-            className="w-full bg-yellow-400 text-black py-2.5 rounded-lg font-black text-sm disabled:opacity-50"
+            className="w-full rounded-lg bg-yellow-400 py-2.5 text-sm font-black text-black disabled:cursor-not-allowed disabled:opacity-50"
           >
             {submitting
               ? "Submitting..."
@@ -232,8 +262,8 @@ export default function WithdrawPage() {
               : "KYC Required"}
           </button>
 
-          <p className="text-[11px] text-zinc-500 mt-3 text-center">
-            Minimum ₹100 • Sirf Winning Balance withdraw hoga • KYC mandatory
+          <p className="mt-3 text-center text-[11px] text-zinc-500">
+            Minimum ₹100 • Wallet balance se withdraw hoga • KYC mandatory
           </p>
         </div>
       </div>
