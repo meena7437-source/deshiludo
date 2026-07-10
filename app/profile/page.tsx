@@ -14,8 +14,7 @@ export default function ProfilePage() {
 
   const [uid, setUid] = useState("");
   const [phone, setPhone] = useState("");
-  const [depositBalance, setDepositBalance] = useState(0);
-  const [winningBalance, setWinningBalance] = useState(0);
+  const [balance, setBalance] = useState(0);
 
   const [referralCode, setReferralCode] = useState("");
   const [kycStatus, setKycStatus] = useState("pending");
@@ -29,9 +28,9 @@ export default function ProfilePage() {
   useEffect(() => {
     let walletChannel: any = null;
 
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
@@ -52,8 +51,8 @@ export default function ProfilePage() {
             table: "wallets",
             filter: `uid=eq.${user.uid}`,
           },
-          async () => {
-            await loadWallet(user.uid);
+          (payload: any) => {
+            setBalance(Number(payload.new?.balance || 0));
           }
         )
         .subscribe();
@@ -62,22 +61,31 @@ export default function ProfilePage() {
     });
 
     return () => {
-      unsub();
-      if (walletChannel) supabase.removeChannel(walletChannel);
+      unsubscribe();
+
+      if (walletChannel) {
+        supabase.removeChannel(walletChannel);
+      }
     };
   }, [router]);
 
   function makeReferralCode(userPhone: string, userId: string) {
     const cleanPhone = userPhone.replace(/\D/g, "");
-    const last4 = cleanPhone.slice(-4) || userId.slice(0, 4).toUpperCase();
-    const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const last4 =
+      cleanPhone.slice(-4) || userId.slice(0, 4).toUpperCase();
+
+    const random = Math.random()
+      .toString(36)
+      .substring(2, 6)
+      .toUpperCase();
+
     return `DL${last4}${random}`;
   }
 
   async function loadWallet(userId: string) {
     const { data, error } = await supabase
       .from("wallets")
-      .select("deposit_balance, winning_balance")
+      .select("balance")
       .eq("uid", userId)
       .maybeSingle();
 
@@ -86,16 +94,20 @@ export default function ProfilePage() {
       return;
     }
 
-    setDepositBalance(Number(data?.deposit_balance || 0));
-    setWinningBalance(Number(data?.winning_balance || 0));
+    setBalance(Number(data?.balance || 0));
   }
 
-  async function loadProfile(userId: string, userPhone: string) {
+  async function loadProfile(
+    userId: string,
+    userPhone: string
+  ) {
     await loadWallet(userId);
 
     const { data, error } = await supabase
       .from("users")
-      .select("referral_code, aadhaar_url, pan_url, kyc_status")
+      .select(
+        "referral_code, aadhaar_url, pan_url, kyc_status"
+      )
       .eq("firebase_uid", userId)
       .maybeSingle();
 
@@ -109,10 +121,16 @@ export default function ProfilePage() {
     if (!code) {
       code = makeReferralCode(userPhone, userId);
 
-      await supabase
+      const { error: referralError } = await supabase
         .from("users")
-        .update({ referral_code: code })
+        .update({
+          referral_code: code,
+        })
         .eq("firebase_uid", userId);
+
+      if (referralError) {
+        toast.error("Referral code save nahi hua");
+      }
     }
 
     setReferralCode(code || "");
@@ -121,42 +139,59 @@ export default function ProfilePage() {
     setKycStatus(data?.kyc_status || "pending");
   }
 
-  async function uploadKycDoc(type: "aadhaar" | "pan", file: File) {
+  async function uploadKycDoc(
+    type: "aadhaar" | "pan",
+    file: File
+  ) {
     try {
       if (!uid) {
         toast.error("User login nahi hai");
         return;
       }
 
-      if (type === "aadhaar") setUploadingAadhaar(true);
-      if (type === "pan") setUploadingPan(true);
+      if (type === "aadhaar") {
+        setUploadingAadhaar(true);
+      }
+
+      if (type === "pan") {
+        setUploadingPan(true);
+      }
 
       const formData = new FormData();
+
       formData.append("uid", uid);
       formData.append("type", type);
       formData.append("file", file);
 
-      const res = await fetch("/api/kyc/upload", {
+      const response = await fetch("/api/kyc/upload", {
         method: "POST",
         body: formData,
       });
 
-      const result = await res.json();
+      const result = await response.json();
 
-      if (!res.ok || !result.success) {
+      if (!response.ok || !result.success) {
         toast.error(result.message || "Upload failed");
         return;
       }
 
-      if (type === "aadhaar") setAadhaarUrl(result.path);
-      if (type === "pan") setPanUrl(result.path);
+      if (type === "aadhaar") {
+        setAadhaarUrl(result.path || "");
+      }
+
+      if (type === "pan") {
+        setPanUrl(result.path || "");
+      }
 
       setKycStatus("pending");
+
       toast.success(
-        type === "aadhaar" ? "Aadhaar upload ho gaya" : "PAN upload ho gaya"
+        type === "aadhaar"
+          ? "Aadhaar upload ho gaya"
+          : "PAN upload ho gaya"
       );
-    } catch (err: any) {
-      toast.error(err?.message || "Upload failed");
+    } catch (error: any) {
+      toast.error(error?.message || "Upload failed");
     } finally {
       setUploadingAadhaar(false);
       setUploadingPan(false);
@@ -169,25 +204,47 @@ export default function ProfilePage() {
       return;
     }
 
-    await navigator.clipboard.writeText(referralCode);
-    toast.success("Referral code copied");
+    try {
+      await navigator.clipboard.writeText(referralCode);
+      toast.success("Referral code copied");
+    } catch {
+      toast.error("Referral code copy nahi hua");
+    }
   }
 
   async function logout() {
     await signOut(auth);
     localStorage.removeItem("deshiludo_admin");
-    router.push("/login");
+    router.replace("/login");
   }
 
   function kycClass() {
-    if (kycStatus === "approved") return "text-green-400 bg-green-500/10";
-    if (kycStatus === "rejected") return "text-red-400 bg-red-500/10";
-    return "text-yellow-400 bg-yellow-500/10";
+    if (kycStatus === "approved") {
+      return "text-green-400 bg-green-500/10 border border-green-500/30";
+    }
+
+    if (kycStatus === "rejected") {
+      return "text-red-400 bg-red-500/10 border border-red-500/30";
+    }
+
+    return "text-yellow-400 bg-yellow-500/10 border border-yellow-500/30";
+  }
+
+  function kycMessage() {
+    if (kycStatus === "approved") {
+      return "KYC approved hai.";
+    }
+
+    if (kycStatus === "rejected") {
+      return "KYC reject hui hai. Documents dubara upload karo.";
+    }
+
+    return "KYC verification pending hai.";
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center">
+      <main className="flex min-h-screen items-center justify-center bg-black text-white">
         <div className="flex flex-col items-center gap-3">
           <Image
             src="/logo.png"
@@ -197,18 +254,19 @@ export default function ProfilePage() {
             className="rounded-full border border-yellow-400/50 object-cover"
             priority
           />
-          <p className="text-yellow-400 font-bold">Loading Profile...</p>
+
+          <p className="font-bold text-yellow-400">
+            Loading Profile...
+          </p>
         </div>
       </main>
     );
   }
 
-  const totalBalance = depositBalance + winningBalance;
-
   return (
-    <main className="min-h-screen bg-black text-white p-3 pb-24">
-      <div className="max-w-xl mx-auto">
-        <div className="flex items-center justify-between mb-3">
+    <main className="min-h-screen bg-black p-3 pb-24 text-white">
+      <div className="mx-auto max-w-xl">
+        <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Image
               src="/logo.png"
@@ -220,165 +278,218 @@ export default function ProfilePage() {
             />
 
             <div>
-              <h1 className="text-2xl font-black text-yellow-400">Profile</h1>
-              <p className="text-[11px] text-zinc-500">DeshiLudo Player</p>
+              <h1 className="text-2xl font-black text-yellow-400">
+                Profile
+              </h1>
+
+              <p className="text-[11px] text-zinc-500">
+                DeshiLudo Player
+              </p>
             </div>
           </div>
 
           <Link href="/dashboard">
-            <button className="bg-zinc-800 px-3 py-2 rounded-lg text-xs">
+            <button className="rounded-lg bg-zinc-800 px-3 py-2 text-xs font-bold text-white">
               Back
             </button>
           </Link>
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
-          <p className="text-xs text-zinc-400">Mobile Number</p>
-          <p className="text-lg font-black text-white">{phone || "User"}</p>
-          <p className="text-[10px] text-zinc-600 mt-1 break-all">UID: {uid}</p>
+        <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+          <p className="text-xs text-zinc-400">
+            Mobile Number
+          </p>
+
+          <p className="text-lg font-black text-white">
+            {phone || "User"}
+          </p>
+
+          <p className="mt-1 break-all text-[10px] text-zinc-600">
+            UID: {uid}
+          </p>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          <div className="bg-zinc-950 border border-yellow-500/30 rounded-xl p-3">
-            <p className="text-[10px] text-zinc-400">Deposit</p>
-            <p className="text-lg font-black text-yellow-400">
-              ₹{depositBalance}
-            </p>
-          </div>
+        <div className="mb-3 rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/15 via-zinc-950 to-black p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-green-300">
+                Wallet Balance
+              </p>
 
-          <div className="bg-zinc-950 border border-green-500/30 rounded-xl p-3">
-            <p className="text-[10px] text-zinc-400">Winning</p>
-            <p className="text-lg font-black text-green-400">
-              ₹{winningBalance}
-            </p>
-          </div>
+              <p className="mt-1 text-3xl font-black text-green-400">
+                ₹{balance}
+              </p>
+            </div>
 
-          <div className="bg-zinc-950 border border-zinc-700 rounded-xl p-3">
-            <p className="text-[10px] text-zinc-400">Total</p>
-            <p className="text-lg font-black text-white">₹{totalBalance}</p>
+            <span className="rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-[10px] font-black text-green-400">
+              SINGLE WALLET
+            </span>
           </div>
         </div>
 
         <Link href="/wallet-history">
-          <button className="w-full bg-zinc-950 border border-yellow-500/30 text-yellow-400 rounded-xl py-3 font-black text-sm mb-3">
+          <button className="mb-3 w-full rounded-xl border border-yellow-500/30 bg-zinc-950 py-3 text-sm font-black text-yellow-400">
             Wallet History →
           </button>
         </Link>
 
-        <div className="bg-yellow-400/10 border border-yellow-500/30 rounded-xl p-3 mb-3">
-          <p className="text-xs text-zinc-400">Referral Code</p>
+        <div className="mb-3 rounded-xl border border-yellow-500/30 bg-yellow-400/10 p-3">
+          <p className="text-xs text-zinc-400">
+            Referral Code
+          </p>
 
-          <div className="flex items-center justify-between gap-2 mt-1">
-            <p className="text-xl font-black text-yellow-400 break-all">
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="break-all text-xl font-black text-yellow-400">
               {referralCode || "Generating..."}
             </p>
 
             <button
               onClick={copyReferral}
-              className="bg-yellow-400 text-black px-3 py-2 rounded-lg text-xs font-black"
+              className="rounded-lg bg-yellow-400 px-3 py-2 text-xs font-black text-black"
             >
               Copy
             </button>
           </div>
 
-          <p className="text-[11px] text-zinc-500 mt-2">
+          <p className="mt-2 text-[11px] text-zinc-500">
             Friend first deposit karega to aapko 5% bonus milega.
           </p>
         </div>
 
-        <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 mb-3">
-          <div className="flex items-center justify-between mb-3">
+        <div className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-black text-white">KYC Documents</h2>
+              <h2 className="text-lg font-black text-white">
+                KYC Documents
+              </h2>
+
               <p className="text-[11px] text-zinc-500">
                 Aadhaar aur PAN upload karo.
               </p>
             </div>
 
             <span
-              className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${kycClass()}`}
+              className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${kycClass()}`}
             >
               {kycStatus}
             </span>
           </div>
 
+          <div className="mb-3 rounded-lg border border-zinc-800 bg-black p-2">
+            <p className="text-[11px] text-zinc-400">
+              {kycMessage()}
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 gap-3">
-            <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">
+            <div className="rounded-xl border border-zinc-800 bg-black p-3">
+              <p className="mb-2 text-sm font-bold text-zinc-300">
                 Aadhaar Card
               </p>
+
               <p
                 className={`text-xs ${
-                  aadhaarUrl ? "text-green-400" : "text-zinc-500"
+                  aadhaarUrl
+                    ? "text-green-400"
+                    : "text-zinc-500"
                 }`}
               >
-                {aadhaarUrl ? "Aadhaar uploaded ✅" : "Aadhaar upload nahi hai."}
+                {aadhaarUrl
+                  ? "Aadhaar uploaded ✅"
+                  : "Aadhaar upload nahi hai."}
               </p>
 
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadKycDoc("aadhaar", file);
-                }}
-                className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
-              />
+              {kycStatus !== "approved" && (
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  disabled={uploadingAadhaar}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+
+                    if (file) {
+                      uploadKycDoc("aadhaar", file);
+                    }
+
+                    event.target.value = "";
+                  }}
+                  className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black disabled:opacity-60"
+                />
+              )}
 
               {uploadingAadhaar && (
-                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
+                <p className="mt-2 text-xs text-yellow-400">
+                  Uploading Aadhaar...
+                </p>
               )}
             </div>
 
-            <div className="bg-black border border-zinc-800 rounded-xl p-3">
-              <p className="text-sm font-bold text-zinc-300 mb-2">PAN Card</p>
-              <p
-                className={`text-xs ${
-                  panUrl ? "text-green-400" : "text-zinc-500"
-                }`}
-              >
-                {panUrl ? "PAN uploaded ✅" : "PAN card upload nahi hai."}
+            <div className="rounded-xl border border-zinc-800 bg-black p-3">
+              <p className="mb-2 text-sm font-bold text-zinc-300">
+                PAN Card
               </p>
 
-              <input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) uploadKycDoc("pan", file);
-                }}
-                className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black"
-              />
+              <p
+                className={`text-xs ${
+                  panUrl
+                    ? "text-green-400"
+                    : "text-zinc-500"
+                }`}
+              >
+                {panUrl
+                  ? "PAN uploaded ✅"
+                  : "PAN card upload nahi hai."}
+              </p>
+
+              {kycStatus !== "approved" && (
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  disabled={uploadingPan}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+
+                    if (file) {
+                      uploadKycDoc("pan", file);
+                    }
+
+                    event.target.value = "";
+                  }}
+                  className="mt-3 w-full text-xs text-zinc-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-400 file:px-3 file:py-2 file:text-xs file:font-black file:text-black disabled:opacity-60"
+                />
+              )}
 
               {uploadingPan && (
-                <p className="text-xs text-yellow-400 mt-2">Uploading...</p>
+                <p className="mt-2 text-xs text-yellow-400">
+                  Uploading PAN...
+                </p>
               )}
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="mb-3 grid grid-cols-2 gap-2">
           <Link href="/deposit">
-            <button className="w-full bg-yellow-400 text-black rounded-lg py-3 font-black text-sm">
+            <button className="w-full rounded-lg bg-yellow-400 py-3 text-sm font-black text-black">
               Deposit
             </button>
           </Link>
 
           <Link href="/withdraw">
-            <button className="w-full bg-green-500 text-black rounded-lg py-3 font-black text-sm">
+            <button className="w-full rounded-lg bg-green-500 py-3 text-sm font-black text-black">
               Withdraw
             </button>
           </Link>
 
           <Link href="/support">
-            <button className="w-full bg-blue-600 text-white rounded-lg py-3 font-black text-sm">
+            <button className="w-full rounded-lg bg-blue-600 py-3 text-sm font-black text-white">
               Help & Support
             </button>
           </Link>
 
           <button
             onClick={logout}
-            className="w-full bg-red-600 text-white rounded-lg py-3 font-black text-sm"
+            className="w-full rounded-lg bg-red-600 py-3 text-sm font-black text-white"
           >
             Logout
           </button>

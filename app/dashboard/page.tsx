@@ -26,43 +26,68 @@ export default function DashboardPage() {
 
   const [uid, setUid] = useState("");
   const [phone, setPhone] = useState("");
-  const [depositBalance, setDepositBalance] = useState(0);
-  const [winningBalance, setWinningBalance] = useState(0);
-  const [openBattles, setOpenBattles] = useState<Battle[]>([]);
-  const [liveBattles, setLiveBattles] = useState<Battle[]>([]);
+  const [balance, setBalance] = useState(0);
+
+  const [allBattles, setAllBattles] = useState<Battle[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<number | null>(null);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
 
-  const totalBalance = depositBalance + winningBalance;
+  const myBattles = allBattles.filter(
+    (battle) =>
+      battle.creator_uid === uid || battle.joiner_uid === uid
+  );
+
+  const openBattles = allBattles.filter(
+    (battle) =>
+      battle.status === "open" &&
+      battle.creator_uid !== uid &&
+      battle.joiner_uid !== uid
+  );
+
+  const liveBattles = allBattles.filter(
+    (battle) =>
+      (battle.status === "matched" || battle.status === "running") &&
+      battle.creator_uid !== uid &&
+      battle.joiner_uid !== uid
+  );
 
   useEffect(() => {
     let battleChannel: any = null;
     let walletChannel: any = null;
 
-    const unsub = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
       setUid(user.uid);
       setPhone(user.phoneNumber || "User");
 
-      await loadWallet(user.uid);
-      await loadBattles();
+      await Promise.all([
+        loadWallet(user.uid),
+        loadBattles(),
+      ]);
 
       battleChannel = supabase
         .channel("dashboard-battles-live")
         .on(
           "postgres_changes",
-          { event: "*", schema: "public", table: "battles" },
-          () => loadBattles()
+          {
+            event: "*",
+            schema: "public",
+            table: "battles",
+          },
+          () => {
+            loadBattles();
+          }
         )
         .subscribe();
 
       walletChannel = supabase
-        .channel(`wallet-live-${user.uid}`)
+        .channel(`dashboard-wallet-live-${user.uid}`)
         .on(
           "postgres_changes",
           {
@@ -72,8 +97,7 @@ export default function DashboardPage() {
             filter: `uid=eq.${user.uid}`,
           },
           (payload: any) => {
-            setDepositBalance(Number(payload.new?.deposit_balance || 0));
-            setWinningBalance(Number(payload.new?.winning_balance || 0));
+            setBalance(Number(payload.new?.balance || 0));
           }
         )
         .subscribe();
@@ -82,16 +106,22 @@ export default function DashboardPage() {
     });
 
     return () => {
-      unsub();
-      if (battleChannel) supabase.removeChannel(battleChannel);
-      if (walletChannel) supabase.removeChannel(walletChannel);
+      unsubscribe();
+
+      if (battleChannel) {
+        supabase.removeChannel(battleChannel);
+      }
+
+      if (walletChannel) {
+        supabase.removeChannel(walletChannel);
+      }
     };
   }, [router]);
 
   async function loadWallet(userId: string) {
     const { data, error } = await supabase
       .from("wallets")
-      .select("deposit_balance, winning_balance")
+      .select("balance")
       .eq("uid", userId)
       .maybeSingle();
 
@@ -100,14 +130,25 @@ export default function DashboardPage() {
       return;
     }
 
-    setDepositBalance(Number(data?.deposit_balance || 0));
-    setWinningBalance(Number(data?.winning_balance || 0));
+    setBalance(Number(data?.balance || 0));
   }
 
   async function loadBattles() {
     const { data, error } = await supabase
       .from("battles")
-      .select("*")
+      .select(
+        `
+          id,
+          amount,
+          status,
+          room_code,
+          creator_uid,
+          joiner_uid,
+          creator_name,
+          joiner_name,
+          created_at
+        `
+      )
       .in("status", ["open", "matched", "running"])
       .order("created_at", { ascending: false });
 
@@ -116,12 +157,7 @@ export default function DashboardPage() {
       return;
     }
 
-    const battles = (data || []) as Battle[];
-
-    setOpenBattles(battles.filter((b) => b.status === "open"));
-    setLiveBattles(
-      battles.filter((b) => b.status === "matched" || b.status === "running")
-    );
+    setAllBattles((data || []) as Battle[]);
   }
 
   async function joinBattle(battleId: number) {
@@ -129,15 +165,17 @@ export default function DashboardPage() {
       const user = auth.currentUser;
 
       if (!user) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
       setJoiningId(battleId);
 
-      const res = await fetch("/api/battles/join", {
+      const response = await fetch("/api/battles/join", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           battleId,
           uid: user.uid,
@@ -145,17 +183,23 @@ export default function DashboardPage() {
         }),
       });
 
-      const result = await res.json();
+      const result = await response.json();
 
-      if (!res.ok || !result.success) {
+      if (!response.ok || !result.success) {
         toast.error(result.message || "Battle join nahi hui");
         return;
       }
 
       toast.success("Battle joined successfully");
+
+      await Promise.all([
+        loadBattles(),
+        loadWallet(user.uid),
+      ]);
+
       router.push(`/battle/${battleId}`);
-    } catch (err: any) {
-      toast.error(err.message || "Something went wrong");
+    } catch (error: any) {
+      toast.error(error.message || "Something went wrong");
     } finally {
       setJoiningId(null);
     }
@@ -165,33 +209,43 @@ export default function DashboardPage() {
     const user = auth.currentUser;
 
     if (!user) {
-      router.push("/login");
+      router.replace("/login");
       return;
     }
 
     try {
       setCancellingId(battleId);
 
-      const { data, error } = await supabase.rpc("cancel_battle_safe", {
-        battle_id_input: battleId,
-        uid_input: user.uid,
-      });
+      const { data, error } = await supabase.rpc(
+        "cancel_battle_safe",
+        {
+          battle_id_input: battleId,
+          uid_input: user.uid,
+        }
+      );
 
       if (error) {
         toast.error(error.message);
         return;
       }
 
-      if (data === "cancelled_refunded" || data === "cancelled") {
+      if (
+        data === "cancelled_refunded" ||
+        data === "cancelled"
+      ) {
         toast.success("Battle cancel ho gayi, refund done ✅");
+      } else if (data === "already_closed") {
+        toast.error("Battle pehle hi close ho chuki hai");
       } else {
         toast.success("Battle cancel request done ✅");
       }
 
-      await loadBattles();
-      await loadWallet(user.uid);
-    } catch (err: any) {
-      toast.error(err.message || "Battle cancel nahi hui");
+      await Promise.all([
+        loadBattles(),
+        loadWallet(user.uid),
+      ]);
+    } catch (error: any) {
+      toast.error(error.message || "Battle cancel nahi hui");
     } finally {
       setCancellingId(null);
     }
@@ -199,21 +253,35 @@ export default function DashboardPage() {
 
   async function logout() {
     await signOut(auth);
-    router.push("/login");
+    router.replace("/login");
+  }
+
+  function getBattleStatusText(battle: Battle) {
+    if (battle.status === "open") {
+      return "Waiting for Player";
+    }
+
+    if (battle.status === "matched") {
+      return "Player Joined";
+    }
+
+    return "Battle Running";
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center">
-        <p className="text-yellow-400 font-bold">Loading DeshiLudo...</p>
+      <main className="flex min-h-screen items-center justify-center bg-black text-white">
+        <p className="font-bold text-yellow-400">
+          Loading DeshiLudo...
+        </p>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-black text-white pb-20">
-      <header className="sticky top-0 z-20 bg-black/95 backdrop-blur border-b border-yellow-500/30 px-3 py-2">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-2">
+    <main className="min-h-screen bg-black pb-20 text-white">
+      <header className="sticky top-0 z-20 border-b border-yellow-500/30 bg-black/95 px-3 py-2 backdrop-blur">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Image
               src="/logo.png"
@@ -225,23 +293,29 @@ export default function DashboardPage() {
             />
 
             <div>
-              <h1 className="text-xl font-black text-yellow-400 leading-none">
+              <h1 className="text-xl font-black leading-none text-yellow-400">
                 DeshiLudo
               </h1>
-              <p className="text-[10px] text-zinc-400 mt-1">{phone}</p>
+
+              <p className="mt-1 text-[10px] text-zinc-400">
+                {phone}
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <div className="text-right">
-              <p className="text-[10px] text-zinc-400">Balance</p>
+              <p className="text-[10px] text-zinc-400">
+                Wallet Balance
+              </p>
+
               <p className="text-base font-black text-green-400">
-                ₹{totalBalance}
+                ₹{balance}
               </p>
             </div>
 
             <Link href="/profile">
-              <button className="rounded-lg bg-yellow-400 text-black px-3 py-2 text-xs font-black">
+              <button className="rounded-lg bg-yellow-400 px-3 py-2 text-xs font-black text-black">
                 Profile
               </button>
             </Link>
@@ -249,76 +323,152 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <section className="max-w-3xl mx-auto px-3 pt-3">
-        <div className="grid grid-cols-3 gap-2 mb-3">
-          <div className="rounded-xl border border-green-500/30 bg-green-500/10 p-3">
-            <p className="text-[10px] text-green-300">Deposit</p>
-            <p className="text-lg font-black text-green-400">
-              ₹{depositBalance}
-            </p>
-          </div>
+      <section className="mx-auto max-w-3xl px-3 pt-3">
+        <div className="mb-3 rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/15 via-zinc-950 to-black p-4">
+          <p className="text-xs font-bold text-green-300">
+            Available Balance
+          </p>
 
-          <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-3">
-            <p className="text-[10px] text-yellow-300">Winning</p>
-            <p className="text-lg font-black text-yellow-400">
-              ₹{winningBalance}
+          <div className="mt-1 flex items-center justify-between">
+            <p className="text-3xl font-black text-green-400">
+              ₹{balance}
             </p>
-          </div>
 
-          <div className="rounded-xl border border-zinc-700 bg-zinc-950 p-3">
-            <p className="text-[10px] text-zinc-400">Total</p>
-            <p className="text-lg font-black text-white">₹{totalBalance}</p>
+            <span className="rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-[10px] font-bold text-green-400">
+              SINGLE WALLET
+            </span>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="mb-4 grid grid-cols-3 gap-2">
           <Link href="/create-battle">
-            <button className="w-full rounded-xl bg-yellow-400 text-black py-2 text-xs font-black">
-              Create
+            <button className="w-full rounded-xl bg-yellow-400 py-3 text-xs font-black text-black">
+              Create Battle
             </button>
           </Link>
 
           <Link href="/deposit">
-            <button className="w-full rounded-xl bg-zinc-900 border border-green-700/50 text-green-400 py-2 text-xs font-bold">
+            <button className="w-full rounded-xl border border-green-700/50 bg-zinc-900 py-3 text-xs font-bold text-green-400">
               Deposit
             </button>
           </Link>
 
           <Link href="/withdraw">
-            <button className="w-full rounded-xl bg-zinc-900 border border-red-700/50 text-red-400 py-2 text-xs font-bold">
+            <button className="w-full rounded-xl border border-red-700/50 bg-zinc-900 py-3 text-xs font-bold text-red-400">
               Withdraw
-            </button>
-          </Link>
-
-          <Link href="/wallet">
-            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
-              Wallet
-            </button>
-          </Link>
-
-          <Link href="/profile">
-            <button className="w-full rounded-xl bg-zinc-900 border border-yellow-500/50 text-yellow-400 py-2 text-xs font-bold">
-              Profile
-            </button>
-          </Link>
-
-          <Link href="/battle-history">
-            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
-              History
             </button>
           </Link>
         </div>
 
-        <div className="rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-zinc-950 to-zinc-900 p-3 mb-3">
+        <div className="mb-3 rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-zinc-950 p-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs text-zinc-400">Open Battles</p>
+              <p className="text-xs text-purple-300">
+                My Bet
+              </p>
+
+              <h2 className="text-lg font-black text-white">
+                Your Active Battles
+              </h2>
+            </div>
+
+            <div className="rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1">
+              <p className="text-[11px] font-bold text-purple-400">
+                {myBattles.length} Active
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {myBattles.length === 0 ? (
+          <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
+            <p className="text-sm text-zinc-500">
+              Abhi aapki koi active bet nahi hai.
+            </p>
+          </div>
+        ) : (
+          <div className="mb-5 space-y-2">
+            {myBattles.map((battle) => {
+              const isCreator = battle.creator_uid === uid;
+              const isOpen = battle.status === "open";
+
+              return (
+                <div
+                  key={battle.id}
+                  className="rounded-2xl border border-purple-500/30 bg-zinc-950 p-3 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-lg font-black text-yellow-400">
+                          ₹{battle.amount}
+                        </p>
+
+                        <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-purple-400">
+                          {battle.status}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 truncate text-xs text-zinc-300">
+                        {isOpen
+                          ? "Waiting for another player"
+                          : `${
+                              battle.creator_name || "Player 1"
+                            } vs ${
+                              battle.joiner_name || "Player 2"
+                            }`}
+                      </p>
+
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        {getBattleStatusText(battle)} • Battle ID #
+                        {battle.id}
+                      </p>
+                    </div>
+
+                    <div className="flex shrink-0 flex-col gap-2">
+                      <button
+                        onClick={() =>
+                          router.push(`/battle/${battle.id}`)
+                        }
+                        className="rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-xs font-black text-purple-300"
+                      >
+                        Open Battle
+                      </button>
+
+                      {isOpen && isCreator && (
+                        <button
+                          onClick={() =>
+                            cancelOpenBattle(battle.id)
+                          }
+                          disabled={cancellingId === battle.id}
+                          className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-black text-red-400 disabled:opacity-60"
+                        >
+                          {cancellingId === battle.id
+                            ? "Cancelling..."
+                            : "Cancel"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="mb-3 rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-zinc-950 to-zinc-900 p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-zinc-400">
+                Open Battles
+              </p>
+
               <h2 className="text-lg font-black text-white">
                 Join Battle Room
               </h2>
             </div>
 
-            <div className="rounded-full bg-green-500/10 border border-green-500/30 px-3 py-1">
+            <div className="rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1">
               <p className="text-[11px] font-bold text-green-400">
                 {openBattles.length} Open
               </p>
@@ -327,20 +477,93 @@ export default function DashboardPage() {
         </div>
 
         {openBattles.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center mb-4">
-            <p className="text-zinc-400 text-sm">
-              Abhi koi open battle nahi hai.
+          <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
+            <p className="text-sm text-zinc-400">
+              Abhi koi dusri open battle nahi hai.
             </p>
+
             <Link href="/create-battle">
-              <button className="mt-4 bg-yellow-400 text-black px-5 py-2 rounded-xl text-sm font-black">
-                First Battle Create Karo
+              <button className="mt-4 rounded-xl bg-yellow-400 px-5 py-2 text-sm font-black text-black">
+                Battle Create Karo
               </button>
             </Link>
           </div>
         ) : (
-          <div className="space-y-2 mb-5">
-            {openBattles.map((battle) => {
-              const isOwnBattle = battle.creator_uid === uid;
+          <div className="mb-5 space-y-2">
+            {openBattles.map((battle) => (
+              <div
+                key={battle.id}
+                className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3 shadow-lg"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-lg font-black text-yellow-400">
+                        ₹{battle.amount}
+                      </p>
+
+                      <span className="rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-[10px] text-green-400">
+                        OPEN
+                      </span>
+                    </div>
+
+                    <p className="mt-1 truncate text-xs text-zinc-400">
+                      {battle.creator_name || "Player"} waiting for
+                      opponent
+                    </p>
+
+                    <p className="mt-1 text-[11px] text-zinc-500">
+                      Battle ID #{battle.id}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => joinBattle(battle.id)}
+                    disabled={joiningId === battle.id}
+                    className="shrink-0 rounded-xl bg-yellow-400 px-5 py-2 text-xs font-black text-black disabled:opacity-60"
+                  >
+                    {joiningId === battle.id
+                      ? "Joining..."
+                      : "Join"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mb-3 rounded-2xl border border-blue-500/30 bg-gradient-to-br from-zinc-950 to-zinc-900 p-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-zinc-400">
+                Live Battles
+              </p>
+
+              <h2 className="text-lg font-black text-white">
+                Running Battles
+              </h2>
+            </div>
+
+            <div className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1">
+              <p className="text-[11px] font-bold text-blue-400">
+                {liveBattles.length} Live
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {liveBattles.length === 0 ? (
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
+            <p className="text-sm text-zinc-500">
+              Abhi koi dusri live battle nahi hai.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {liveBattles.map((battle) => {
+              const canOpenBattle =
+                battle.creator_uid === uid ||
+                battle.joiner_uid === uid;
 
               return (
                 <div
@@ -353,50 +576,32 @@ export default function DashboardPage() {
                         <p className="text-lg font-black text-yellow-400">
                           ₹{battle.amount}
                         </p>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                          OPEN
+
+                        <span className="rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[10px] uppercase text-blue-400">
+                          {battle.status}
                         </span>
                       </div>
 
-                      <p className="text-xs text-zinc-400 truncate mt-1">
-                        {battle.creator_name || "Player"} waiting for opponent
+                      <p className="mt-1 truncate text-xs text-zinc-400">
+                        {battle.creator_name || "Player 1"} vs{" "}
+                        {battle.joiner_name || "Player 2"}
                       </p>
 
-                      <p className="text-[11px] text-zinc-500 mt-1">
+                      <p className="mt-1 text-[11px] text-zinc-500">
                         Battle ID #{battle.id}
                       </p>
                     </div>
 
-                    <div className="shrink-0 flex flex-col gap-2">
-                      {isOwnBattle ? (
-                        <>
-                          <button
-                            onClick={() => router.push(`/battle/${battle.id}`)}
-                            className="rounded-xl bg-zinc-800 text-zinc-300 px-3 py-2 text-xs font-bold border border-zinc-700"
-                          >
-                            Waiting
-                          </button>
-
-                          <button
-                            onClick={() => cancelOpenBattle(battle.id)}
-                            disabled={cancellingId === battle.id}
-                            className="rounded-xl bg-red-500/10 text-red-400 px-3 py-2 text-xs font-black border border-red-500/30 disabled:opacity-60"
-                          >
-                            {cancellingId === battle.id
-                              ? "Cancelling..."
-                              : "Cancel"}
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => joinBattle(battle.id)}
-                          disabled={joiningId === battle.id}
-                          className="rounded-xl bg-yellow-400 text-black px-5 py-2 text-xs font-black disabled:opacity-60"
-                        >
-                          {joiningId === battle.id ? "Joining..." : "Join"}
-                        </button>
-                      )}
-                    </div>
+                    {canOpenBattle && (
+                      <button
+                        onClick={() =>
+                          router.push(`/battle/${battle.id}`)
+                        }
+                        className="shrink-0 rounded-xl border border-blue-500/30 bg-blue-500/10 px-4 py-2 text-xs font-black text-blue-300"
+                      >
+                        Open Battle
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -404,77 +609,16 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="rounded-2xl border border-blue-500/30 bg-gradient-to-br from-zinc-950 to-zinc-900 p-3 mb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-zinc-400">Live Battles</p>
-              <h2 className="text-lg font-black text-white">Running Battles</h2>
-            </div>
-
-            <div className="rounded-full bg-blue-500/10 border border-blue-500/30 px-3 py-1">
-              <p className="text-[11px] font-bold text-blue-400">
-                {liveBattles.length} Live
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {liveBattles.length === 0 ? (
-          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
-            <p className="text-zinc-500 text-sm">
-              Abhi koi live battle nahi hai.
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {liveBattles.map((battle) => (
-              <div
-                key={battle.id}
-                className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3 shadow-lg"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-lg font-black text-yellow-400">
-                        ₹{battle.amount}
-                      </p>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">
-                        {battle.status}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-zinc-400 truncate mt-1">
-                      {battle.creator_name || "Player 1"} vs{" "}
-                      {battle.joiner_name || "Player 2"}
-                    </p>
-
-                    <p className="text-[11px] text-zinc-500 mt-1">
-                      Battle ID #{battle.id}
-                    </p>
-                  </div>
-
-                  <button
-                    onClick={() => router.push(`/battle/${battle.id}`)}
-                    className="rounded-xl bg-zinc-800 text-white px-4 py-2 text-xs font-black border border-zinc-700"
-                  >
-                    View
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
         <div className="mt-5 grid grid-cols-2 gap-2">
           <Link href="/battle-history">
-            <button className="w-full rounded-xl bg-zinc-900 border border-zinc-700 py-2 text-xs font-bold">
+            <button className="w-full rounded-xl border border-zinc-700 bg-zinc-900 py-3 text-xs font-bold">
               My Battles
             </button>
           </Link>
 
           <button
             onClick={logout}
-            className="w-full rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 py-2 text-xs font-bold"
+            className="w-full rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-xs font-bold text-red-400"
           >
             Logout
           </button>

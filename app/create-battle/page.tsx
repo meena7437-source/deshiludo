@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
+import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
@@ -10,55 +11,83 @@ export default function CreateBattlePage() {
   const router = useRouter();
 
   const [amount, setAmount] = useState("");
-  const [depositBalance, setDepositBalance] = useState(0);
-  const [winningBalance, setWinningBalance] = useState(0);
+  const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(true);
 
   const quickAmounts = [100, 150, 200, 500, 1000, 2000, 5000];
 
   useEffect(() => {
-    loadWallet();
-  }, []);
+    let walletChannel: any = null;
 
-  async function loadWallet() {
-    const user = auth.currentUser;
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        router.replace("/login");
+        return;
+      }
 
-    if (!user) {
-      router.push("/login");
-      return;
-    }
+      await loadWallet(user.uid);
 
+      walletChannel = supabase
+        .channel(`create-battle-wallet-${user.uid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "wallets",
+            filter: `uid=eq.${user.uid}`,
+          },
+          (payload: any) => {
+            setBalance(Number(payload.new?.balance || 0));
+          }
+        )
+        .subscribe();
+
+      setWalletLoading(false);
+    });
+
+    return () => {
+      unsubscribe();
+
+      if (walletChannel) {
+        supabase.removeChannel(walletChannel);
+      }
+    };
+  }, [router]);
+
+  async function loadWallet(userId: string) {
     const { data, error } = await supabase
       .from("wallets")
-      .select("deposit_balance, winning_balance")
-      .eq("uid", user.uid)
-      .single();
-
-    setWalletLoading(false);
+      .select("balance")
+      .eq("uid", userId)
+      .maybeSingle();
 
     if (error) {
-      toast.error(error.message);
+      toast.error("Wallet load nahi hua");
+      setWalletLoading(false);
       return;
     }
 
-    setDepositBalance(Number(data?.deposit_balance || 0));
-    setWinningBalance(Number(data?.winning_balance || 0));
+    setBalance(Number(data?.balance || 0));
   }
 
   async function createBattle() {
+    if (loading) {
+      return;
+    }
+
     const user = auth.currentUser;
 
     if (!user) {
       toast.error("Please login first");
-      router.push("/login");
+      router.replace("/login");
       return;
     }
 
     const battleAmount = Number(amount);
-    const totalBalance = depositBalance + winningBalance;
 
-    if (!amount || battleAmount <= 0) {
+    if (!amount || !Number.isFinite(battleAmount) || battleAmount <= 0) {
       toast.error("Valid amount enter karo");
       return;
     }
@@ -73,7 +102,7 @@ export default function CreateBattlePage() {
       return;
     }
 
-    if (battleAmount > totalBalance) {
+    if (battleAmount > balance) {
       toast.error("Insufficient balance");
       return;
     }
@@ -94,25 +123,22 @@ export default function CreateBattlePage() {
 
       toast.success("Battle created ✅");
       router.push(`/battle/${data}`);
-    } catch (err: any) {
-      toast.error(err?.message || "Battle create failed");
+    } catch (error: any) {
+      toast.error(error?.message || "Battle create failed");
     } finally {
       setLoading(false);
     }
   }
 
   const battleAmount = Number(amount || 0);
-  const totalBalance = depositBalance + winningBalance;
-
-  const depositUsed = Math.min(depositBalance, battleAmount);
-  const winningUsed = Math.max(battleAmount - depositBalance, 0);
-
-  const afterDeposit = depositBalance - depositUsed;
-  const afterWinning = winningBalance - winningUsed;
+  const balanceAfter =
+    battleAmount > 0 && battleAmount <= balance
+      ? balance - battleAmount
+      : balance;
 
   return (
-    <main className="min-h-screen bg-black text-white px-4 py-5">
-      <div className="max-w-xl mx-auto">
+    <main className="min-h-screen bg-black px-4 py-5 text-white">
+      <div className="mx-auto max-w-xl">
         <button
           onClick={() => router.push("/dashboard")}
           className="mb-4 text-sm text-zinc-400 hover:text-white"
@@ -120,64 +146,56 @@ export default function CreateBattlePage() {
           ← Back to Dashboard
         </button>
 
-        <div className="bg-gradient-to-br from-zinc-900 to-black rounded-3xl p-5 border border-yellow-400/20 shadow-xl">
-          <div className="flex items-start justify-between gap-3 mb-5">
+        <div className="rounded-3xl border border-yellow-400/20 bg-gradient-to-br from-zinc-900 to-black p-5 shadow-xl">
+          <div className="mb-5 flex items-start justify-between gap-3">
             <div>
               <h1 className="text-2xl font-black text-yellow-400">
                 Create Battle
               </h1>
-              <p className="text-zinc-400 text-sm mt-1">
-                Pehle deposit balance se, baaki winning balance se deduct hoga.
+
+              <p className="mt-1 text-sm text-zinc-400">
+                Battle amount aapke wallet balance se deduct hoga.
               </p>
             </div>
 
-            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl px-3 py-2 text-right">
-              <p className="text-[11px] text-zinc-500">Total Balance</p>
+            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 px-3 py-2 text-right">
+              <p className="text-[11px] text-zinc-500">
+                Wallet Balance
+              </p>
+
               <p className="text-lg font-black text-green-400">
-                {walletLoading ? "..." : `₹${totalBalance}`}
+                {walletLoading ? "..." : `₹${balance}`}
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 mb-5">
-            <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-3">
-              <p className="text-xs text-green-300">Deposit Balance</p>
-              <p className="text-xl font-black text-green-400">
-                ₹{depositBalance}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-3">
-              <p className="text-xs text-yellow-300">Winning Balance</p>
-              <p className="text-xl font-black text-yellow-400">
-                ₹{winningBalance}
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mb-5">
-            <label className="block text-sm font-bold mb-2">
+          <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <label className="mb-2 block text-sm font-bold">
               Battle Amount
             </label>
 
             <input
               type="number"
+              inputMode="numeric"
+              min={100}
+              step={50}
               placeholder="₹100, ₹150, ₹200..."
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              className="w-full p-3 rounded-xl bg-black border border-zinc-800 text-white outline-none focus:border-yellow-400 mb-4"
+              onChange={(event) => setAmount(event.target.value)}
+              className="mb-4 w-full rounded-xl border border-zinc-800 bg-black p-3 text-white outline-none focus:border-yellow-400"
             />
 
             <div className="grid grid-cols-4 gap-2">
               {quickAmounts.map((value) => (
                 <button
                   key={value}
+                  type="button"
                   onClick={() => setAmount(String(value))}
-                  disabled={value > totalBalance}
-                  className={`py-2 rounded-xl text-sm font-black border disabled:opacity-40 ${
+                  disabled={walletLoading || value > balance}
+                  className={`rounded-xl border py-2 text-sm font-black disabled:opacity-40 ${
                     Number(amount) === value
-                      ? "bg-yellow-400 text-black border-yellow-400"
-                      : "bg-zinc-900 text-white border-zinc-800"
+                      ? "border-yellow-400 bg-yellow-400 text-black"
+                      : "border-zinc-800 bg-zinc-900 text-white"
                   }`}
                 >
                   ₹{value}
@@ -186,54 +204,60 @@ export default function CreateBattlePage() {
             </div>
           </div>
 
-          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mb-5">
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-zinc-400">Battle Amount</span>
-              <span className="font-bold">₹{battleAmount}</span>
+          <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-2 flex justify-between text-sm">
+              <span className="text-zinc-400">
+                Current Balance
+              </span>
+
+              <span className="font-black text-green-400">
+                ₹{balance}
+              </span>
             </div>
 
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-zinc-400">Deposit se katega</span>
-              <span className="font-bold text-green-400">₹{depositUsed}</span>
+            <div className="mb-2 flex justify-between text-sm">
+              <span className="text-zinc-400">
+                Battle Amount
+              </span>
+
+              <span className="font-bold text-yellow-400">
+                ₹{battleAmount}
+              </span>
             </div>
 
-            <div className="flex justify-between text-sm mb-2">
-              <span className="text-zinc-400">Winning se katega</span>
-              <span className="font-bold text-yellow-400">₹{winningUsed}</span>
-            </div>
-
-            <div className="border-t border-zinc-800 pt-3 mt-3">
-              <div className="flex justify-between text-sm mb-2">
-                <span className="text-zinc-400">After Deposit</span>
-                <span className="font-black text-green-400">
-                  ₹{afterDeposit}
-                </span>
-              </div>
-
+            <div className="mt-3 border-t border-zinc-800 pt-3">
               <div className="flex justify-between text-sm">
-                <span className="text-zinc-400">After Winning</span>
+                <span className="text-zinc-400">
+                  Balance After Battle
+                </span>
+
                 <span
                   className={`font-black ${
-                    afterWinning < 0 ? "text-red-400" : "text-yellow-400"
+                    battleAmount > balance
+                      ? "text-red-400"
+                      : "text-white"
                   }`}
                 >
-                  ₹{afterWinning}
+                  ₹
+                  {battleAmount > balance
+                    ? balance - battleAmount
+                    : balanceAfter}
                 </span>
               </div>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={createBattle}
             disabled={loading || walletLoading}
-            className="w-full bg-yellow-400 text-black font-black py-3 rounded-2xl disabled:bg-zinc-700 disabled:text-zinc-400 active:scale-[0.99]"
+            className="w-full rounded-2xl bg-yellow-400 py-3 font-black text-black active:scale-[0.99] disabled:bg-zinc-700 disabled:text-zinc-400"
           >
             {loading ? "Creating Battle..." : "Create Battle"}
           </button>
 
-          <p className="text-xs text-zinc-500 text-center mt-4">
-            Minimum ₹100. Amount ₹50 ke multiple me hona chahiye. Pehle deposit
-            balance se, baaki winning balance se deduct hoga.
+          <p className="mt-4 text-center text-xs text-zinc-500">
+            Minimum ₹100. Amount ₹50 ke multiple me hona chahiye.
           </p>
         </div>
       </div>
