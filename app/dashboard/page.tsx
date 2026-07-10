@@ -14,10 +14,16 @@ type Battle = {
   amount: number;
   status: string;
   room_code?: string | null;
+
   creator_uid: string;
   joiner_uid?: string | null;
+
   creator_name?: string | null;
   joiner_name?: string | null;
+
+  creator_phone?: string | null;
+  joiner_phone?: string | null;
+
   created_at: string;
 };
 
@@ -146,6 +152,8 @@ export default function DashboardPage() {
           joiner_uid,
           creator_name,
           joiner_name,
+          creator_phone,
+          joiner_phone,
           created_at
         `
       )
@@ -161,6 +169,10 @@ export default function DashboardPage() {
   }
 
   async function joinBattle(battleId: number) {
+    if (joiningId !== null) {
+      return;
+    }
+
     try {
       const user = auth.currentUser;
 
@@ -199,7 +211,7 @@ export default function DashboardPage() {
 
       router.push(`/battle/${battleId}`);
     } catch (error: any) {
-      toast.error(error.message || "Something went wrong");
+      toast.error(error?.message || "Something went wrong");
     } finally {
       setJoiningId(null);
     }
@@ -245,7 +257,7 @@ export default function DashboardPage() {
         loadWallet(user.uid),
       ]);
     } catch (error: any) {
-      toast.error(error.message || "Battle cancel nahi hui");
+      toast.error(error?.message || "Battle cancel nahi hui");
     } finally {
       setCancellingId(null);
     }
@@ -254,6 +266,22 @@ export default function DashboardPage() {
   async function logout() {
     await signOut(auth);
     router.replace("/login");
+  }
+
+  function getCreatorDisplayName(battle: Battle) {
+    return (
+      battle.creator_name?.trim() ||
+      battle.creator_phone?.trim() ||
+      "Creator"
+    );
+  }
+
+  function getJoinerDisplayName(battle: Battle) {
+    return (
+      battle.joiner_name?.trim() ||
+      battle.joiner_phone?.trim() ||
+      "Joiner"
+    );
   }
 
   function getBattleStatusText(battle: Battle) {
@@ -392,6 +420,12 @@ export default function DashboardPage() {
               const isCreator = battle.creator_uid === uid;
               const isOpen = battle.status === "open";
 
+              const creatorDisplayName =
+                getCreatorDisplayName(battle);
+
+              const joinerDisplayName =
+                getJoinerDisplayName(battle);
+
               return (
                 <div
                   key={battle.id}
@@ -411,12 +445,8 @@ export default function DashboardPage() {
 
                       <p className="mt-1 truncate text-xs text-zinc-300">
                         {isOpen
-                          ? "Waiting for another player"
-                          : `${
-                              battle.creator_name || "Player 1"
-                            } vs ${
-                              battle.joiner_name || "Player 2"
-                            }`}
+                          ? `${creatorDisplayName} waiting for player`
+                          : `${creatorDisplayName} vs ${joinerDisplayName}`}
                       </p>
 
                       <p className="mt-1 text-[11px] text-zinc-500">
@@ -427,6 +457,7 @@ export default function DashboardPage() {
 
                     <div className="flex shrink-0 flex-col gap-2">
                       <button
+                        type="button"
                         onClick={() =>
                           router.push(`/battle/${battle.id}`)
                         }
@@ -437,6 +468,7 @@ export default function DashboardPage() {
 
                       {isOpen && isCreator && (
                         <button
+                          type="button"
                           onClick={() =>
                             cancelOpenBattle(battle.id)
                           }
@@ -508,7 +540,7 @@ export default function DashboardPage() {
                     </div>
 
                     <p className="mt-1 truncate text-xs text-zinc-400">
-                      {battle.creator_name || "Player"} waiting for
+                      {getCreatorDisplayName(battle)} waiting for
                       opponent
                     </p>
 
@@ -518,8 +550,12 @@ export default function DashboardPage() {
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => joinBattle(battle.id)}
-                    disabled={joiningId === battle.id}
+                    disabled={
+                      joiningId === battle.id ||
+                      joiningId !== null
+                    }
                     className="shrink-0 rounded-xl bg-yellow-400 px-5 py-2 text-xs font-black text-black disabled:opacity-60"
                   >
                     {joiningId === battle.id
@@ -583,8 +619,8 @@ export default function DashboardPage() {
                       </div>
 
                       <p className="mt-1 truncate text-xs text-zinc-400">
-                        {battle.creator_name || "Player 1"} vs{" "}
-                        {battle.joiner_name || "Player 2"}
+                        {getCreatorDisplayName(battle)} vs{" "}
+                        {getJoinerDisplayName(battle)}
                       </p>
 
                       <p className="mt-1 text-[11px] text-zinc-500">
@@ -594,6 +630,7 @@ export default function DashboardPage() {
 
                     {canOpenBattle && (
                       <button
+                        type="button"
                         onClick={() =>
                           router.push(`/battle/${battle.id}`)
                         }
@@ -617,6 +654,7 @@ export default function DashboardPage() {
           </Link>
 
           <button
+            type="button"
             onClick={logout}
             className="w-full rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-xs font-bold text-red-400"
           >
