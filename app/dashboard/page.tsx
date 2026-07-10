@@ -185,8 +185,13 @@ export default function DashboardPage() {
     }
 
     battleRows.forEach((battle) => {
-      if (battle.creator_uid) ids.add(battle.creator_uid);
-      if (battle.joiner_uid) ids.add(battle.joiner_uid);
+      if (battle.creator_uid) {
+        ids.add(battle.creator_uid);
+      }
+
+      if (battle.joiner_uid) {
+        ids.add(battle.joiner_uid);
+      }
     });
 
     if (ids.size === 0) {
@@ -406,40 +411,43 @@ export default function DashboardPage() {
     <main className="min-h-screen bg-black pb-20 text-white">
       <header className="sticky top-0 z-20 border-b border-yellow-500/30 bg-black/95 px-3 py-2 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <Image
               src="/logo.png"
               alt="DeshiLudo Logo"
               width={52}
               height={52}
-              className="rounded-full border border-yellow-500/40"
+              className="h-[52px] w-[52px] shrink-0 rounded-full border border-yellow-500/40 object-contain"
               priority
             />
 
-            <div>
-              <h1 className="text-xl font-black leading-none text-yellow-400">
+            <div className="min-w-0">
+              <h1 className="truncate text-xl font-black leading-none text-yellow-400">
                 DeshiLudo
               </h1>
 
-              <p className="mt-1 text-[10px] text-zinc-400">
+              <p className="mt-1 truncate text-[10px] text-zinc-400">
                 {playerDisplay || maskPhone(phone) || "Player"}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <div className="text-right">
-              <p className="text-[10px] text-zinc-400">
+              <p className="text-[9px] text-zinc-400 sm:text-[10px]">
                 Wallet Balance
               </p>
 
-              <p className="text-base font-black text-green-400">
+              <p className="text-sm font-black text-green-400 sm:text-base">
                 ₹{balance}
               </p>
             </div>
 
             <Link href="/profile">
-              <button className="rounded-lg bg-yellow-400 px-3 py-2 text-xs font-black text-black">
+              <button
+                type="button"
+                className="rounded-lg bg-yellow-400 px-3 py-2 text-[11px] font-black text-black sm:text-xs"
+              >
                 Profile
               </button>
             </Link>
@@ -466,19 +474,28 @@ export default function DashboardPage() {
 
         <div className="mb-4 grid grid-cols-3 gap-2">
           <Link href="/create-battle">
-            <button className="w-full rounded-xl bg-yellow-400 py-3 text-xs font-black text-black">
+            <button
+              type="button"
+              className="w-full rounded-xl bg-yellow-400 py-3 text-xs font-black text-black"
+            >
               Create Battle
             </button>
           </Link>
 
           <Link href="/deposit">
-            <button className="w-full rounded-xl border border-green-700/50 bg-zinc-900 py-3 text-xs font-bold text-green-400">
+            <button
+              type="button"
+              className="w-full rounded-xl border border-green-700/50 bg-zinc-900 py-3 text-xs font-bold text-green-400"
+            >
               Deposit
             </button>
           </Link>
 
           <Link href="/withdraw">
-            <button className="w-full rounded-xl border border-red-700/50 bg-zinc-900 py-3 text-xs font-bold text-red-400">
+            <button
+              type="button"
+              className="w-full rounded-xl border border-red-700/50 bg-zinc-900 py-3 text-xs font-bold text-red-400"
+            >
               Withdraw
             </button>
           </Link>
@@ -611,7 +628,10 @@ export default function DashboardPage() {
             </p>
 
             <Link href="/create-battle">
-              <button className="mt-4 rounded-xl bg-yellow-400 px-5 py-2 text-sm font-black text-black">
+              <button
+                type="button"
+                className="mt-4 rounded-xl bg-yellow-400 px-5 py-2 text-sm font-black text-black"
+              >
                 Battle Create Karo
               </button>
             </Link>
@@ -742,17 +762,29 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <div className="mt-5 grid grid-cols-2 gap-2">
+        <div className="mt-5 grid grid-cols-3 gap-2">
           <Link href="/battle-history">
-            <button className="w-full rounded-xl border border-zinc-700 bg-zinc-900 py-3 text-xs font-bold">
+            <button
+              type="button"
+              className="w-full rounded-xl border border-zinc-700 bg-zinc-900 py-3 text-[11px] font-bold text-white sm:text-xs"
+            >
               My Battles
+            </button>
+          </Link>
+
+          <Link href="/rules">
+            <button
+              type="button"
+              className="w-full rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-3 text-[11px] font-bold text-yellow-400 sm:text-xs"
+            >
+              Rules
             </button>
           </Link>
 
           <button
             type="button"
             onClick={logout}
-            className="w-full rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-xs font-bold text-red-400"
+            className="w-full rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-[11px] font-bold text-red-400 sm:text-xs"
           >
             Logout
           </button>

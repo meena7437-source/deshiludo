@@ -1,13 +1,14 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import {
+  ConfirmationResult,
   RecaptchaVerifier,
   signInWithPhoneNumber,
-  ConfirmationResult,
 } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
@@ -15,11 +16,16 @@ import { supabase } from "../../lib/supabase";
 function makeReferralCode(phoneNumber: string) {
   const last4 = phoneNumber.slice(-4);
   const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+
   return `DL${last4}${random}`;
 }
 
 function getErrorMessage(err: unknown) {
-  return err instanceof Error ? err.message : "Something went wrong";
+  if (err instanceof Error) {
+    return err.message;
+  }
+
+  return "Something went wrong";
 }
 
 export default function LoginPage() {
@@ -29,6 +35,7 @@ export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [referralCode, setReferralCode] = useState("");
+
   const [confirmation, setConfirmation] =
     useState<ConfirmationResult | null>(null);
 
@@ -40,16 +47,27 @@ export default function LoginPage() {
       recaptchaRef.current = new RecaptchaVerifier(
         auth,
         "recaptcha-container",
-        { size: "normal" }
+        {
+          size: "normal",
+        }
       );
 
-      recaptchaRef.current.render();
+      recaptchaRef.current.render().catch((error) => {
+        console.error("Recaptcha render error:", error);
+      });
     }
+
+    return () => {
+      recaptchaRef.current?.clear();
+      recaptchaRef.current = null;
+    };
   }, []);
 
-  const sendOTP = async () => {
+  async function sendOTP() {
     try {
-      if (phone.length !== 10) {
+      const cleanPhone = phone.trim();
+
+      if (cleanPhone.length !== 10) {
         toast.error("10 digit mobile number enter karo");
         return;
       }
@@ -63,7 +81,7 @@ export default function LoginPage() {
 
       const result = await signInWithPhoneNumber(
         auth,
-        "+91" + phone,
+        `+91${cleanPhone}`,
         recaptchaRef.current
       );
 
@@ -75,9 +93,9 @@ export default function LoginPage() {
     } finally {
       setSending(false);
     }
-  };
+  }
 
-  const verifyOTP = async () => {
+  async function verifyOTP() {
     try {
       if (!confirmation) {
         toast.error("Pehle OTP send karo");
@@ -94,7 +112,7 @@ export default function LoginPage() {
       const userCredential = await confirmation.confirm(otp);
 
       const uid = userCredential.user.uid;
-      const mobile = userCredential.user.phoneNumber || "+91" + phone;
+      const mobile = userCredential.user.phoneNumber || `+91${phone}`;
 
       const { data: existingUser, error: userCheckError } = await supabase
         .from("users")
@@ -137,7 +155,7 @@ export default function LoginPage() {
         finalReferredBy = enteredCode;
       }
 
-      const { error } = await supabase.from("users").upsert(
+      const { error: saveUserError } = await supabase.from("users").upsert(
         {
           firebase_uid: uid,
           phone: mobile,
@@ -149,87 +167,172 @@ export default function LoginPage() {
         }
       );
 
-      if (error) {
-        toast.error(error.message);
+      if (saveUserError) {
+        toast.error(saveUserError.message);
         return;
       }
 
       toast.success("Login successful");
       router.push("/dashboard");
+      router.refresh();
     } catch (err: unknown) {
       console.error(err);
       toast.error(getErrorMessage(err));
     } finally {
       setVerifying(false);
     }
-  };
+  }
 
   return (
-    <main className="min-h-screen bg-black flex items-center justify-center p-4">
-      <div className="bg-zinc-900 p-6 rounded-2xl w-full max-w-sm border border-zinc-800">
-        <div className="flex justify-center mb-4">
-          <Image
-            src="/logo.png"
-            alt="DeshiLudo"
-            width={105}
-            height={105}
-            priority
-            className="rounded-2xl"
-          />
+    <main className="flex min-h-screen items-center justify-center bg-[#050510] px-3 py-5 text-white sm:px-4">
+      <section className="w-full max-w-sm rounded-[26px] border border-yellow-400/15 bg-gradient-to-br from-zinc-950 via-black to-zinc-900 px-4 py-5 shadow-[0_0_35px_rgba(250,204,21,0.08)] sm:px-6 sm:py-6">
+        <div className="flex justify-center">
+          <div className="relative h-20 w-20 overflow-hidden rounded-[22px] border border-yellow-400/20 bg-black shadow-[0_0_24px_rgba(250,204,21,0.16)] sm:h-24 sm:w-24">
+            <Image
+              src="/logo.png"
+              alt="DeshiLudo Logo"
+              fill
+              priority
+              sizes="96px"
+              className="object-contain p-1"
+            />
+          </div>
         </div>
 
-        <h1 className="text-3xl font-bold text-yellow-400 mb-1 text-center">
-          DeshiLudo
-        </h1>
+        <div className="mt-3 text-center">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-yellow-400">
+            Khelo • Jeeto • Kamao
+          </p>
 
-        <p className="text-center text-gray-400 text-sm mb-6">
-          OTP se login karo
+          <h1 className="mt-1 text-2xl font-black leading-tight text-white sm:text-3xl">
+            DeshiLudo
+          </h1>
+
+          <p className="mt-1 text-xs font-medium text-zinc-400 sm:text-sm">
+            Mobile number और OTP से Login करें
+          </p>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          <div>
+            <label className="mb-1.5 block text-[11px] font-bold text-zinc-400">
+              Mobile Number
+            </label>
+
+            <div className="flex overflow-hidden rounded-xl border border-white/10 bg-zinc-900 focus-within:border-yellow-400/40">
+              <span className="flex items-center border-r border-white/10 px-3 text-sm font-bold text-zinc-300">
+                +91
+              </span>
+
+              <input
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel"
+                placeholder="10 digit mobile number"
+                value={phone}
+                onChange={(e) =>
+                  setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                }
+                maxLength={10}
+                className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-[11px] font-bold text-zinc-400">
+              Referral Code
+              <span className="ml-1 font-medium text-zinc-600">
+                Optional
+              </span>
+            </label>
+
+            <input
+              type="text"
+              autoCapitalize="characters"
+              placeholder="Referral code enter करें"
+              value={referralCode}
+              onChange={(e) =>
+                setReferralCode(
+                  e.target.value
+                    .replace(/\s/g, "")
+                    .toUpperCase()
+                    .slice(0, 20)
+                )
+              }
+              disabled={Boolean(confirmation)}
+              className="w-full rounded-xl border border-white/10 bg-zinc-900 px-3 py-3 text-sm uppercase text-white outline-none placeholder:normal-case placeholder:text-zinc-600 focus:border-yellow-400/40 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </div>
+
+          <div className="overflow-x-auto rounded-xl">
+            <div
+              id="recaptcha-container"
+              className="flex min-h-[78px] justify-center"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={sendOTP}
+            disabled={sending || phone.length !== 10}
+            className="w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black shadow-[0_8px_25px_rgba(250,204,21,0.16)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {sending
+              ? "OTP भेजा जा रहा है..."
+              : confirmation
+                ? "OTP दोबारा भेजें"
+                : "Send OTP"}
+          </button>
+
+          {confirmation && (
+            <div className="rounded-2xl border border-green-400/15 bg-green-500/[0.06] p-3">
+              <label className="mb-1.5 block text-[11px] font-bold text-green-300">
+                OTP Verification
+              </label>
+
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="6 digit OTP enter करें"
+                value={otp}
+                onChange={(e) =>
+                  setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
+                maxLength={6}
+                className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-center text-lg font-black tracking-[0.35em] text-white outline-none placeholder:text-xs placeholder:font-medium placeholder:tracking-normal placeholder:text-zinc-600 focus:border-green-400/40"
+              />
+
+              <button
+                type="button"
+                onClick={verifyOTP}
+                disabled={verifying || otp.length !== 6}
+                className="mt-3 w-full rounded-xl bg-green-500 px-4 py-3 text-sm font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {verifying ? "Verify हो रहा है..." : "Verify OTP"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-white/5 bg-white/[0.025] px-3 py-2.5 text-center">
+          <p className="text-[11px] leading-5 text-zinc-500">
+            Login करने पर आप DeshiLudo के{" "}
+            <Link
+              href="/rules"
+              className="font-bold text-yellow-400 underline decoration-yellow-400/40 underline-offset-2"
+            >
+              Game Rules & Terms
+            </Link>{" "}
+            को स्वीकार करते हैं।
+          </p>
+        </div>
+
+        <p className="mt-4 text-center text-[10px] text-zinc-700">
+          केवल 18 वर्ष या उससे अधिक आयु के उपयोगकर्ताओं के लिए
         </p>
-
-        <input
-          type="tel"
-          placeholder="Enter Mobile Number"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-          maxLength={10}
-          className="w-full p-3 rounded-lg bg-zinc-800 text-white mb-4 outline-none"
-        />
-
-        <input
-          type="text"
-          placeholder="Referral Code Optional"
-          value={referralCode}
-          onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-          className="w-full p-3 rounded-lg bg-zinc-800 text-white mb-4 outline-none"
-        />
-
-        <div id="recaptcha-container" className="mb-4"></div>
-
-        <button
-          onClick={sendOTP}
-          disabled={sending}
-          className="w-full bg-yellow-400 disabled:opacity-60 text-black font-bold py-3 rounded-lg mb-4"
-        >
-          {sending ? "Sending..." : "Send OTP"}
-        </button>
-
-        <input
-          type="text"
-          placeholder="Enter OTP"
-          value={otp}
-          onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-          maxLength={6}
-          className="w-full p-3 rounded-lg bg-zinc-800 text-white mb-4 outline-none"
-        />
-
-        <button
-          onClick={verifyOTP}
-          disabled={verifying}
-          className="w-full bg-green-500 disabled:opacity-60 text-white font-bold py-3 rounded-lg"
-        >
-          {verifying ? "Verifying..." : "Verify OTP"}
-        </button>
-      </div>
+      </section>
     </main>
   );
 }
