@@ -18,14 +18,14 @@ export default function BattleHistoryPage() {
   useEffect(() => {
     let battlesChannel: any = null;
 
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
-        router.push("/login");
+        router.replace("/login");
         return;
       }
 
       setCurrentUid(user.uid);
-      loadBattles(user.uid);
+      await loadBattles(user.uid);
 
       battlesChannel = supabase
         .channel(`battle-history-live-${user.uid}`)
@@ -36,8 +36,8 @@ export default function BattleHistoryPage() {
             schema: "public",
             table: "battles",
           },
-          () => {
-            loadBattles(user.uid);
+          async () => {
+            await loadBattles(user.uid);
           }
         )
         .subscribe();
@@ -62,6 +62,7 @@ export default function BattleHistoryPage() {
     setLoading(false);
 
     if (error) {
+      console.error("Battle history load error:", error);
       toast.error(error.message);
       return;
     }
@@ -72,6 +73,7 @@ export default function BattleHistoryPage() {
   function getNetWinning(amount: number) {
     const totalPot = Number(amount || 0) * 2;
     const commission = Math.floor(totalPot * 0.1);
+
     return totalPot - commission;
   }
 
@@ -79,60 +81,111 @@ export default function BattleHistoryPage() {
     const total = battles.length;
 
     const wins = battles.filter(
-      (b) => b.status === "completed" && b.winner_uid === currentUid
+      (battle) =>
+        battle.status === "completed" &&
+        battle.winner_uid === currentUid
     ).length;
 
     const losses = battles.filter(
-      (b) => b.status === "completed" && b.winner_uid !== currentUid
+      (battle) =>
+        battle.status === "completed" &&
+        battle.winner_uid !== currentUid
     ).length;
 
-    const cancelled = battles.filter((b) => b.status === "cancelled").length;
+    const cancelled = battles.filter(
+      (battle) => battle.status === "cancelled"
+    ).length;
 
     const winning = battles
-      .filter((b) => b.status === "completed" && b.winner_uid === currentUid)
-      .reduce((sum, b) => sum + getNetWinning(Number(b.amount || 0)), 0);
+      .filter(
+        (battle) =>
+          battle.status === "completed" &&
+          battle.winner_uid === currentUid
+      )
+      .reduce(
+        (sum, battle) =>
+          sum + getNetWinning(Number(battle.amount || 0)),
+        0
+      );
 
-    return { total, wins, losses, cancelled, winning };
+    return {
+      total,
+      wins,
+      losses,
+      cancelled,
+      winning,
+    };
   }, [battles, currentUid]);
 
   const filteredBattles = useMemo(() => {
-    if (filter === "all") return battles;
+    if (filter === "all") {
+      return battles;
+    }
 
     if (filter === "won") {
       return battles.filter(
-        (b) => b.status === "completed" && b.winner_uid === currentUid
+        (battle) =>
+          battle.status === "completed" &&
+          battle.winner_uid === currentUid
       );
     }
 
     if (filter === "lost") {
       return battles.filter(
-        (b) => b.status === "completed" && b.winner_uid !== currentUid
+        (battle) =>
+          battle.status === "completed" &&
+          battle.winner_uid !== currentUid
       );
     }
 
-    return battles.filter((b) => b.status === filter);
+    if (filter === "running") {
+      return battles.filter(
+        (battle) =>
+          battle.status === "matched" ||
+          battle.status === "running"
+      );
+    }
+
+    return battles.filter((battle) => battle.status === filter);
   }, [battles, filter, currentUid]);
 
   function getStatusStyle(status: string) {
-    if (status === "open")
-      return "text-yellow-300 bg-yellow-400/10 border-yellow-400/30";
-    if (status === "matched" || status === "running")
-      return "text-blue-300 bg-blue-400/10 border-blue-400/30";
-    if (status === "completed")
-      return "text-green-300 bg-green-400/10 border-green-400/30";
-    if (status === "cancelled")
-      return "text-red-300 bg-red-400/10 border-red-400/30";
-    return "text-zinc-300 bg-zinc-400/10 border-zinc-400/30";
+    if (status === "open") {
+      return "border-yellow-400/30 bg-yellow-400/10 text-yellow-300";
+    }
+
+    if (status === "matched" || status === "running") {
+      return "border-blue-400/30 bg-blue-400/10 text-blue-300";
+    }
+
+    if (status === "completed") {
+      return "border-green-400/30 bg-green-400/10 text-green-300";
+    }
+
+    if (status === "cancelled") {
+      return "border-red-400/30 bg-red-400/10 text-red-300";
+    }
+
+    return "border-zinc-400/30 bg-zinc-400/10 text-zinc-300";
   }
 
   function getResultText(battle: any) {
     if (battle.status === "completed") {
-      return battle.winner_uid === currentUid ? "You Won ✅" : "You Lost ❌";
+      return battle.winner_uid === currentUid
+        ? "You Won ✅"
+        : "You Lost ❌";
     }
 
-    if (battle.status === "cancelled") return "Cancelled / Refunded";
-    if (battle.status === "matched" || battle.status === "running")
+    if (battle.status === "cancelled") {
+      return "Cancelled / Refunded";
+    }
+
+    if (
+      battle.status === "matched" ||
+      battle.status === "running"
+    ) {
       return "Match Running";
+    }
 
     return "Waiting for Player";
   }
@@ -144,31 +197,44 @@ export default function BattleHistoryPage() {
         : "text-red-400";
     }
 
-    if (battle.status === "cancelled") return "text-red-400";
-    if (battle.status === "matched" || battle.status === "running")
+    if (battle.status === "cancelled") {
+      return "text-red-400";
+    }
+
+    if (
+      battle.status === "matched" ||
+      battle.status === "running"
+    ) {
       return "text-blue-400";
+    }
 
     return "text-yellow-400";
   }
 
   function formatDate(dateValue: string) {
-    if (!dateValue) return "No date";
+    if (!dateValue) {
+      return "No date";
+    }
 
     return new Date(dateValue).toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
       day: "2-digit",
       month: "short",
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: true,
     });
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#07070b] text-white flex items-center justify-center p-5">
+      <main className="flex min-h-screen items-center justify-center bg-[#07070b] p-4 text-white">
         <div className="text-center">
-          <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
-          <p className="font-bold text-zinc-300">Loading battle history...</p>
+          <div className="mx-auto mb-3 h-9 w-9 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+          <p className="text-sm font-bold text-zinc-300">
+            Loading battle history...
+          </p>
         </div>
       </main>
     );
@@ -176,59 +242,64 @@ export default function BattleHistoryPage() {
 
   return (
     <main className="min-h-screen bg-[#07070b] text-white">
-      <div className="mx-auto max-w-xl px-4 py-5">
+      <div className="mx-auto w-full max-w-md px-3 py-3">
         <button
+          type="button"
           onClick={() => router.push("/dashboard")}
-          className="mb-5 rounded-full border border-zinc-800 bg-zinc-950 px-4 py-2 text-sm font-bold text-zinc-300"
+          className="mb-3 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-[11px] font-bold text-zinc-300"
         >
           ← Dashboard
         </button>
 
-        <section className="mb-5 rounded-[28px] border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-5 shadow-2xl shadow-black/50">
-          <p className="text-xs font-bold uppercase tracking-[0.25em] text-yellow-400">
+        <section className="mb-3 rounded-2xl border border-yellow-400/20 bg-gradient-to-br from-zinc-900 via-black to-zinc-950 p-3.5 shadow-xl shadow-black/40">
+          <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-yellow-400">
             DeshiLudo
           </p>
 
-          <h1 className="mt-2 text-3xl font-black text-white">
+          <h1 className="mt-1 text-2xl font-black leading-tight text-white">
             Battle History
           </h1>
 
-          <p className="mt-1 text-sm text-zinc-500">
+          <p className="mt-0.5 text-[10px] text-zinc-500">
             Aapki create aur joined battles yahan dikhegi.
           </p>
 
-          <div className="mt-5 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
-              <p className="text-xs text-zinc-500">Total Battles</p>
-              <p className="mt-1 text-2xl font-black text-yellow-400">
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl border border-zinc-800 bg-black/60 p-2.5">
+              <p className="text-[9px] text-zinc-500">Total Battles</p>
+              <p className="mt-0.5 text-lg font-black text-yellow-400">
                 {stats.total}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
-              <p className="text-xs text-zinc-500">Total Net Winning</p>
-              <p className="mt-1 text-2xl font-black text-green-400">
+            <div className="rounded-xl border border-zinc-800 bg-black/60 p-2.5">
+              <p className="text-[9px] text-zinc-500">
+                Total Winning
+              </p>
+              <p className="mt-0.5 text-lg font-black text-green-400">
                 ₹{stats.winning}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
-              <p className="text-xs text-zinc-500">Won</p>
-              <p className="mt-1 text-2xl font-black text-green-400">
+            <div className="rounded-xl border border-zinc-800 bg-black/60 p-2.5">
+              <p className="text-[9px] text-zinc-500">Won</p>
+              <p className="mt-0.5 text-lg font-black text-green-400">
                 {stats.wins}
               </p>
             </div>
 
-            <div className="rounded-2xl border border-zinc-800 bg-black/60 p-4">
-              <p className="text-xs text-zinc-500">Lost / Cancel</p>
-              <p className="mt-1 text-2xl font-black text-red-400">
+            <div className="rounded-xl border border-zinc-800 bg-black/60 p-2.5">
+              <p className="text-[9px] text-zinc-500">
+                Lost / Cancel
+              </p>
+              <p className="mt-0.5 text-lg font-black text-red-400">
                 {stats.losses}/{stats.cancelled}
               </p>
             </div>
           </div>
         </section>
 
-        <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+        <div className="mb-3 flex gap-1.5 overflow-x-auto pb-1">
           {[
             { key: "all", label: "All" },
             { key: "won", label: "Won" },
@@ -239,8 +310,9 @@ export default function BattleHistoryPage() {
           ].map((item) => (
             <button
               key={item.key}
+              type="button"
               onClick={() => setFilter(item.key)}
-              className={`shrink-0 rounded-full border px-4 py-2 text-sm font-black ${
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-[10px] font-black ${
                 filter === item.key
                   ? "border-yellow-400 bg-yellow-400 text-black"
                   : "border-zinc-800 bg-zinc-950 text-zinc-400"
@@ -252,30 +324,37 @@ export default function BattleHistoryPage() {
         </div>
 
         {battles.length === 0 ? (
-          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
-            <p className="text-xl font-black">No history found</p>
-            <p className="mt-2 text-sm text-zinc-500">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-center">
+            <p className="text-base font-black">No history found</p>
+
+            <p className="mt-1 text-[11px] text-zinc-500">
               Battle create ya join hone ke baad yahan dikhegi.
             </p>
 
             <button
+              type="button"
               onClick={() => router.push("/create-battle")}
-              className="mt-5 w-full rounded-2xl bg-yellow-400 py-4 font-black text-black"
+              className="mt-3 w-full rounded-xl bg-yellow-400 py-3 text-sm font-black text-black"
             >
               Create Battle
             </button>
           </div>
         ) : filteredBattles.length === 0 ? (
-          <div className="rounded-[28px] border border-zinc-800 bg-zinc-950 p-6 text-center">
-            <p className="text-lg font-black">No battle in this filter</p>
-            <p className="mt-2 text-sm text-zinc-500">
+          <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-center">
+            <p className="text-sm font-black">
+              No battle in this filter
+            </p>
+
+            <p className="mt-1 text-[10px] text-zinc-500">
               Dusra filter select karo.
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-2.5">
             {filteredBattles.map((battle) => {
-              const isCreator = battle.creator_uid === currentUid;
+              const isCreator =
+                battle.creator_uid === currentUid;
+
               const opponentPhone = isCreator
                 ? battle.joiner_phone || "Waiting"
                 : battle.creator_phone || "User";
@@ -290,27 +369,32 @@ export default function BattleHistoryPage() {
                   : "border-zinc-800";
 
               return (
-                <div
+                <article
                   key={battle.id}
-                  className={`rounded-[26px] border ${cardBorder} bg-zinc-950 p-4 shadow-xl shadow-black/30`}
+                  className={`rounded-2xl border ${cardBorder} bg-zinc-950 p-3 shadow-lg shadow-black/30`}
                 >
-                  <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start justify-between gap-2">
                     <div>
-                      <p className="text-xs font-bold text-zinc-500">
+                      <p className="text-[9px] font-bold text-zinc-500">
                         Battle #{battle.id}
                       </p>
 
-                      <p className="mt-1 text-3xl font-black text-yellow-400">
-                        ₹{battle.amount}
+                      <p className="mt-0.5 text-xl font-black text-yellow-400">
+                        ₹{Number(battle.amount || 0).toLocaleString(
+                          "en-IN"
+                        )}
                       </p>
 
-                      <p className="mt-1 text-xs text-zinc-500">
-                        Net Winning ₹{getNetWinning(Number(battle.amount || 0))}
+                      <p className="mt-0.5 text-[9px] text-zinc-500">
+                        Winning ₹
+                        {getNetWinning(
+                          Number(battle.amount || 0)
+                        ).toLocaleString("en-IN")}
                       </p>
                     </div>
 
                     <span
-                      className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${getStatusStyle(
+                      className={`rounded-full border px-2 py-1 text-[9px] font-black uppercase ${getStatusStyle(
                         battle.status
                       )}`}
                     >
@@ -318,27 +402,34 @@ export default function BattleHistoryPage() {
                     </span>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-2xl border border-zinc-800 bg-black p-3">
-                      <p className="text-xs text-zinc-500">Your Role</p>
-                      <p className="font-black">
+                  <div className="mt-2.5 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-zinc-800 bg-black p-2.5">
+                      <p className="text-[9px] text-zinc-500">
+                        Your Role
+                      </p>
+                      <p className="mt-0.5 text-xs font-black">
                         {isCreator ? "Creator" : "Joiner"}
                       </p>
                     </div>
 
-                    <div className="rounded-2xl border border-zinc-800 bg-black p-3">
-                      <p className="text-xs text-zinc-500">Opponent</p>
-                      <p className="truncate text-sm font-black">
+                    <div className="min-w-0 rounded-xl border border-zinc-800 bg-black p-2.5">
+                      <p className="text-[9px] text-zinc-500">
+                        Opponent
+                      </p>
+                      <p className="mt-0.5 truncate text-xs font-black">
                         {opponentPhone}
                       </p>
                     </div>
                   </div>
 
-                  <div className="mt-3 rounded-2xl border border-zinc-800 bg-black p-3">
-                    <div className="flex justify-between gap-3">
-                      <span className="text-sm text-zinc-500">Result</span>
+                  <div className="mt-2 rounded-xl border border-zinc-800 bg-black p-2.5">
+                    <div className="flex justify-between gap-2">
+                      <span className="text-[10px] text-zinc-500">
+                        Result
+                      </span>
+
                       <span
-                        className={`text-sm font-black ${getResultColor(
+                        className={`text-right text-[10px] font-black ${getResultColor(
                           battle
                         )}`}
                       >
@@ -346,21 +437,27 @@ export default function BattleHistoryPage() {
                       </span>
                     </div>
 
-                    <div className="mt-2 flex justify-between gap-3">
-                      <span className="text-sm text-zinc-500">Date</span>
-                      <span className="text-right text-sm font-bold text-zinc-300">
+                    <div className="mt-1.5 flex justify-between gap-2">
+                      <span className="text-[10px] text-zinc-500">
+                        Date
+                      </span>
+
+                      <span className="text-right text-[10px] font-bold text-zinc-300">
                         {formatDate(battle.created_at)}
                       </span>
                     </div>
                   </div>
 
                   <button
-                    onClick={() => router.push(`/battle/${battle.id}`)}
-                    className="mt-4 w-full rounded-2xl bg-yellow-400 py-4 font-black text-black active:scale-[0.99]"
+                    type="button"
+                    onClick={() =>
+                      router.push(`/battle/${battle.id}`)
+                    }
+                    className="mt-2.5 w-full rounded-xl bg-yellow-400 py-2.5 text-xs font-black text-black active:scale-[0.99]"
                   >
                     View Battle
                   </button>
-                </div>
+                </article>
               );
             })}
           </div>
