@@ -68,7 +68,9 @@ export default function AdminDashboardPage() {
       .from("users")
       .select("id, kyc_status, aadhaar_url, pan_url");
 
-    const { data: battles } = await supabase.from("battles").select("status");
+    const { data: battles } = await supabase
+      .from("battles")
+      .select("status");
 
     const { data: deposits } = await supabase
       .from("deposits")
@@ -87,45 +89,58 @@ export default function AdminDashboardPage() {
 
       totalWallet:
         wallets?.reduce(
-          (sum: number, w: any) =>
+          (sum: number, wallet: any) =>
             sum +
-            Number(w.deposit_balance || 0) +
-            Number(w.winning_balance || 0),
+            Number(wallet.deposit_balance || 0) +
+            Number(wallet.winning_balance || 0),
           0
         ) || 0,
 
       totalBattles: battles?.length || 0,
 
       openBattles:
-        battles?.filter((b: any) => b.status === "open").length || 0,
+        battles?.filter((battle: any) => battle.status === "open").length || 0,
 
       completedBattles:
-        battles?.filter((b: any) => b.status === "completed").length || 0,
+        battles?.filter((battle: any) => battle.status === "completed")
+          .length || 0,
 
       totalDeposits:
         deposits
-          ?.filter((d: any) => d.status === "approved")
-          .reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) || 0,
+          ?.filter((deposit: any) => deposit.status === "approved")
+          .reduce(
+            (sum: number, deposit: any) =>
+              sum + Number(deposit.amount || 0),
+            0
+          ) || 0,
 
       totalWithdraws:
         withdraws
-          ?.filter((w: any) => w.status === "approved")
-          .reduce((sum: number, w: any) => sum + Number(w.amount || 0), 0) || 0,
+          ?.filter((withdraw: any) => withdraw.status === "approved")
+          .reduce(
+            (sum: number, withdraw: any) =>
+              sum + Number(withdraw.amount || 0),
+            0
+          ) || 0,
 
       pendingDeposits:
-        deposits?.filter((d: any) => d.status === "pending").length || 0,
+        deposits?.filter((deposit: any) => deposit.status === "pending")
+          .length || 0,
 
       pendingWithdraws:
-        withdraws?.filter((w: any) => w.status === "pending").length || 0,
+        withdraws?.filter((withdraw: any) => withdraw.status === "pending")
+          .length || 0,
 
       pendingKyc:
         users?.filter(
-          (u: any) =>
-            u.kyc_status === "pending" && (u.aadhaar_url || u.pan_url)
+          (user: any) =>
+            user.kyc_status === "pending" &&
+            (user.aadhaar_url || user.pan_url)
         ).length || 0,
 
       openSupport:
-        supportTickets?.filter((t: any) => t.status === "open").length || 0,
+        supportTickets?.filter((ticket: any) => ticket.status === "open")
+          .length || 0,
     });
   }
 
@@ -140,6 +155,12 @@ export default function AdminDashboardPage() {
   }
 
   const mainActions = [
+    {
+      title: "Manage Users",
+      desc: `${stats.totalUsers} registered users`,
+      href: "/admin/users",
+      color: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+    },
     {
       title: "Manage Battles",
       desc: "Running, open aur completed battles",
@@ -201,7 +222,8 @@ export default function AdminDashboardPage() {
               </h1>
 
               <p className="mt-1 text-sm text-zinc-500">
-                Live stats, payments, KYC, support aur battles management.
+                Live stats, users, payments, KYC, support aur battles
+                management.
               </p>
             </div>
 
@@ -216,6 +238,7 @@ export default function AdminDashboardPage() {
           <div className="mt-5 grid grid-cols-3 gap-3">
             <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
               <p className="text-xs text-green-300">Approved Deposits</p>
+
               <p className="mt-1 text-2xl font-black text-green-400">
                 ₹{stats.totalDeposits}
               </p>
@@ -223,6 +246,7 @@ export default function AdminDashboardPage() {
 
             <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
               <p className="text-xs text-red-300">Approved Withdraws</p>
+
               <p className="mt-1 text-2xl font-black text-red-400">
                 ₹{stats.totalWithdraws}
               </p>
@@ -230,6 +254,7 @@ export default function AdminDashboardPage() {
 
             <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
               <p className="text-xs text-yellow-300">Open Support</p>
+
               <p className="mt-1 text-2xl font-black text-yellow-400">
                 {stats.openSupport}
               </p>
@@ -237,7 +262,7 @@ export default function AdminDashboardPage() {
           </div>
         </section>
 
-        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-5">
+        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
           {mainActions.map((item) => (
             <Link
               key={item.href}
@@ -245,7 +270,9 @@ export default function AdminDashboardPage() {
               className={`rounded-[24px] border p-5 shadow-xl shadow-black/30 ${item.color}`}
             >
               <p className="text-xl font-black">{item.title}</p>
+
               <p className="mt-2 text-sm opacity-80">{item.desc}</p>
+
               <p className="mt-4 text-sm font-black">Open →</p>
             </Link>
           ))}
@@ -257,9 +284,11 @@ export default function AdminDashboardPage() {
           stats.openSupport > 0) && (
           <section className="mb-6 rounded-[24px] border border-yellow-400/30 bg-yellow-400/10 p-4">
             <p className="font-black text-yellow-300">Pending Alert ⚠️</p>
+
             <p className="mt-1 text-sm text-zinc-300">
               {stats.pendingDeposits} deposit, {stats.pendingWithdraws} withdraw,
-              {stats.pendingKyc} KYC aur {stats.openSupport} support ticket open hai.
+              {stats.pendingKyc} KYC aur {stats.openSupport} support ticket open
+              hai.
             </p>
           </section>
         )}
@@ -269,6 +298,7 @@ export default function AdminDashboardPage() {
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
               Realtime
             </p>
+
             <h2 className="mt-1 text-2xl font-black">Live Stats</h2>
           </div>
 
@@ -280,6 +310,7 @@ export default function AdminDashboardPage() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-2xl">{card[0]}</p>
+
                   <span className="rounded-full border border-zinc-800 bg-black px-3 py-1 text-xs font-bold text-zinc-500">
                     Live
                   </span>
