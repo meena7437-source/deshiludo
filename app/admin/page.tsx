@@ -162,6 +162,12 @@ export default function AdminDashboardPage() {
       color: "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
     },
     {
+      title: "Announcement",
+      desc: "Dashboard message edit aur ON/OFF karein",
+      href: "/admin/announcement",
+      color: "border-orange-500/30 bg-orange-500/10 text-orange-300",
+    },
+    {
       title: "Manage Battles",
       desc: "Running, open aur completed battles",
       href: "/admin/battles",
@@ -222,12 +228,13 @@ export default function AdminDashboardPage() {
               </h1>
 
               <p className="mt-1 text-sm text-zinc-500">
-                Live stats, users, payments, KYC, support aur battles
-                management.
+                Live stats, users, announcement, payments, KYC, support aur
+                battles management.
               </p>
             </div>
 
             <button
+              type="button"
               onClick={logout}
               className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-black text-red-300 active:scale-95"
             >
@@ -267,7 +274,7 @@ export default function AdminDashboardPage() {
             <Link
               key={item.href}
               href={item.href}
-              className={`rounded-[24px] border p-5 shadow-xl shadow-black/30 ${item.color}`}
+              className={`rounded-[24px] border p-5 shadow-xl shadow-black/30 transition active:scale-[0.98] ${item.color}`}
             >
               <p className="text-xl font-black">{item.title}</p>
 

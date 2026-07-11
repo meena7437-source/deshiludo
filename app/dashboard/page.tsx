@@ -33,6 +33,13 @@ type PlayerProfile = {
   phone: string;
 };
 
+type Announcement = {
+  id: number;
+  message: string;
+  is_active: boolean;
+  updated_at?: string | null;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -41,7 +48,11 @@ export default function DashboardPage() {
   const [balance, setBalance] = useState(0);
   const [playerDisplay, setPlayerDisplay] = useState("");
 
+  const [announcement, setAnnouncement] =
+    useState<Announcement | null>(null);
+
   const [allBattles, setAllBattles] = useState<Battle[]>([]);
+
   const [playerProfiles, setPlayerProfiles] = useState<
     Record<string, PlayerProfile>
   >({});
@@ -72,6 +83,7 @@ export default function DashboardPage() {
   useEffect(() => {
     let battleChannel: any = null;
     let walletChannel: any = null;
+    let announcementChannel: any = null;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -85,6 +97,7 @@ export default function DashboardPage() {
       await Promise.all([
         loadWallet(user.uid),
         loadBattles(user.uid),
+        loadAnnouncement(),
       ]);
 
       battleChannel = supabase
@@ -118,6 +131,21 @@ export default function DashboardPage() {
         )
         .subscribe();
 
+      announcementChannel = supabase
+        .channel("dashboard-announcement-live")
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "site_announcements",
+          },
+          () => {
+            loadAnnouncement();
+          }
+        )
+        .subscribe();
+
       setLoading(false);
     });
 
@@ -131,8 +159,40 @@ export default function DashboardPage() {
       if (walletChannel) {
         supabase.removeChannel(walletChannel);
       }
+
+      if (announcementChannel) {
+        supabase.removeChannel(announcementChannel);
+      }
     };
   }, [router]);
+
+  async function loadAnnouncement() {
+    const { data, error } = await supabase
+      .from("site_announcements")
+      .select("id,message,is_active,updated_at")
+      .eq("is_active", true)
+      .order("id", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Announcement load error:", error);
+      setAnnouncement(null);
+      return;
+    }
+
+    if (!data || !String(data.message || "").trim()) {
+      setAnnouncement(null);
+      return;
+    }
+
+    setAnnouncement({
+      id: Number(data.id),
+      message: String(data.message || "").trim(),
+      is_active: data.is_active === true,
+      updated_at: data.updated_at || null,
+    });
+  }
 
   async function loadWallet(userId: string) {
     const { data, error } = await supabase
@@ -409,6 +469,37 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-black pb-20 text-white">
+      <style jsx global>{`
+        @keyframes deshiludoAnnouncementMove {
+          0% {
+            transform: translateX(100%);
+          }
+
+          100% {
+            transform: translateX(-100%);
+          }
+        }
+
+        .deshiludo-announcement-track {
+          display: inline-block;
+          min-width: max-content;
+          padding-left: 100%;
+          animation: deshiludoAnnouncementMove 18s linear infinite;
+          will-change: transform;
+        }
+
+        .deshiludo-announcement-track:hover {
+          animation-play-state: paused;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .deshiludo-announcement-track {
+            padding-left: 0;
+            animation: none;
+          }
+        }
+      `}</style>
+
       <header className="sticky top-0 z-20 border-b border-yellow-500/30 bg-black/95 px-3 py-2 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -454,6 +545,24 @@ export default function DashboardPage() {
           </div>
         </div>
       </header>
+
+      {announcement?.is_active && announcement.message && (
+        <section className="border-b border-yellow-500/30 bg-gradient-to-r from-yellow-500/10 via-orange-500/10 to-yellow-500/10">
+          <div className="mx-auto flex max-w-3xl items-stretch overflow-hidden">
+            <div className="z-10 flex shrink-0 items-center border-r border-yellow-500/30 bg-yellow-400 px-3 py-2 text-[11px] font-black text-black">
+              📢 सूचना
+            </div>
+
+            <div className="min-w-0 flex-1 overflow-hidden py-2">
+              <div className="deshiludo-announcement-track whitespace-nowrap text-xs font-bold text-yellow-200">
+                {announcement.message}
+                <span className="px-10 text-yellow-500">◆</span>
+                {announcement.message}
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className="mx-auto max-w-3xl px-3 pt-3">
         <div className="mb-3 rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/15 via-zinc-950 to-black p-4">
