@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import toast from "react-hot-toast";
-import { supabase } from "../../../lib/supabase";
 
 type UserRow = {
   id: number;
@@ -48,6 +47,13 @@ type CombinedUser = UserRow & {
   wallet: WalletRow | null;
 };
 
+type AdminUsersApiResponse = {
+  success: boolean;
+  message?: string;
+  users?: CombinedUser[];
+  transactions?: TransactionRow[];
+};
+
 function formatMoney(value: number | null | undefined) {
   return `₹${Number(value || 0).toLocaleString("en-IN", {
     maximumFractionDigits: 2,
@@ -57,7 +63,13 @@ function formatMoney(value: number | null | undefined) {
 function formatDate(value: string | null | undefined) {
   if (!value) return "—";
 
-  return new Date(value).toLocaleString("en-IN", {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
+  return date.toLocaleString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
@@ -69,7 +81,7 @@ function formatDate(value: string | null | undefined) {
 function formatPhone(phone: string | number | null) {
   if (!phone) return "Phone not available";
 
-  const value = String(phone);
+  const value = String(phone).trim();
 
   if (value.startsWith("91") && value.length === 12) {
     return `+91 ${value.slice(2)}`;
@@ -97,62 +109,62 @@ function isMinusTransaction(type: string | null) {
 
 function getTransactionSign(type: string | null, amount: number | null) {
   if (Number(amount || 0) < 0) return "−";
+
   return isMinusTransaction(type) ? "−" : "+";
 }
 
 function getKycClass(status: string | null) {
-  if (status === "approved") {
+  const finalStatus = String(status || "").toLowerCase();
+
+  if (finalStatus === "approved") {
     return "border-green-500/30 bg-green-500/10 text-green-300";
   }
 
-  if (status === "pending") {
+  if (finalStatus === "pending") {
     return "border-yellow-500/30 bg-yellow-500/10 text-yellow-300";
   }
 
-  if (status === "rejected") {
+  if (finalStatus === "rejected") {
     return "border-red-500/30 bg-red-500/10 text-red-300";
   }
 
   return "border-zinc-700 bg-zinc-900 text-zinc-400";
 }
 
+function getStatusClass(status: string | null) {
+  const finalStatus = String(status || "").toLowerCase();
+
+  if (
+    finalStatus === "completed" ||
+    finalStatus === "approved" ||
+    finalStatus === "success"
+  ) {
+    return "border-green-500/30 bg-green-500/10 text-green-300";
+  }
+
+  if (
+    finalStatus === "rejected" ||
+    finalStatus === "failed" ||
+    finalStatus === "cancelled"
+  ) {
+    return "border-red-500/30 bg-red-500/10 text-red-300";
+  }
+
+  return "border-yellow-500/30 bg-yellow-500/10 text-yellow-300";
+}
+
 export default function AdminUsersPage() {
   const [users, setUsers] = useState<CombinedUser[]>([]);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
   const [search, setSearch] = useState("");
   const [selectedUid, setSelectedUid] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
-
-    const channel = supabase
-      .channel("admin-users-realtime")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "users" },
-        () => loadData(false)
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "wallets" },
-        () => loadData(false)
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "wallet_transactions",
-        },
-        () => loadData(false)
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
   }, []);
 
   async function loadData(showLoader = true) {
@@ -163,64 +175,56 @@ export default function AdminUsersPage() {
         setRefreshing(true);
       }
 
-      const [usersResult, walletsResult, transactionsResult] =
-        await Promise.all([
-          supabase
-            .from("users")
-            .select(
-              "id,firebase_uid,phone,name,username,referral_code,referred_by,kyc_status,total_battles,total_wins,created_at"
-            )
-            .order("created_at", { ascending: false }),
-
-          supabase
-            .from("wallets")
-            .select(
-              "uid,balance,first_deposit_bonus_given,referral_bonus_given,referral_code,referred_by,updated_at"
-            ),
-
-          supabase
-            .from("wallet_transactions")
-            .select(
-              "id,uid,type,title,description,amount,balance_after,status,battle_id,deposit_id,withdraw_id,created_at"
-            )
-            .order("created_at", { ascending: false }),
-        ]);
-
-      if (usersResult.error) {
-        throw usersResult.error;
-      }
-
-      if (walletsResult.error) {
-        throw walletsResult.error;
-      }
-
-      if (transactionsResult.error) {
-        throw transactionsResult.error;
-      }
-
-      const walletMap = new Map<string, WalletRow>();
-
-      (walletsResult.data || []).forEach((wallet: WalletRow) => {
-        walletMap.set(wallet.uid, wallet);
+      const response = await fetch("/api/admin/users", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
       });
 
-      const finalUsers: CombinedUser[] = (usersResult.data || []).map(
-        (user: UserRow) => ({
-          ...user,
-          wallet: walletMap.get(user.firebase_uid) || null,
-        })
-      );
+      const result = (await response.json()) as AdminUsersApiResponse;
 
-      setUsers(finalUsers);
-      setTransactions(transactionsResult.data || []);
-    } catch (error: any) {
-      console.error("Admin users load error:", error);
-      toast.error(error?.message || "Users load नहीं हो पाए");
+      if (response.status === 401) {
+        window.location.href = "/admin-login";
+        return;
+      }
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Users load नहीं हो पाए");
+      }
+
+      setUsers(Array.isArray(result.users) ? result.users : []);
+
+      setTransactions(
+        Array.isArray(result.transactions) ? result.transactions : []
+      );
+    } catch (error: unknown) {
+      console.error("Secure admin users load error:", error);
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Users और transaction history load नहीं हो पाए";
+
+      toast.error(message);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }
+
+  const transactionsByUid = useMemo(() => {
+    const map = new Map<string, TransactionRow[]>();
+
+    transactions.forEach((transaction) => {
+      const current = map.get(transaction.uid) || [];
+
+      current.push(transaction);
+
+      map.set(transaction.uid, current);
+    });
+
+    return map;
+  }, [transactions]);
 
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -249,25 +253,24 @@ export default function AdminUsersPage() {
   const selectedUser = useMemo(() => {
     if (!selectedUid) return null;
 
-    return (
-      users.find((user) => user.firebase_uid === selectedUid) || null
-    );
+    return users.find((user) => user.firebase_uid === selectedUid) || null;
   }, [selectedUid, users]);
 
   const selectedTransactions = useMemo(() => {
     if (!selectedUid) return [];
 
-    return transactions.filter(
-      (transaction) => transaction.uid === selectedUid
-    );
-  }, [selectedUid, transactions]);
+    return transactionsByUid.get(selectedUid) || [];
+  }, [selectedUid, transactionsByUid]);
 
   const selectedTotals = useMemo(() => {
     return selectedTransactions.reduce(
       (total, transaction) => {
         const amount = Math.abs(Number(transaction.amount || 0));
 
-        if (isMinusTransaction(transaction.type)) {
+        if (
+          Number(transaction.amount || 0) < 0 ||
+          isMinusTransaction(transaction.type)
+        ) {
           total.minus += amount;
         } else {
           total.plus += amount;
@@ -275,9 +278,19 @@ export default function AdminUsersPage() {
 
         return total;
       },
-      { plus: 0, minus: 0 }
+      {
+        plus: 0,
+        minus: 0,
+      }
     );
   }, [selectedTransactions]);
+
+  const totalWalletBalance = useMemo(() => {
+    return users.reduce(
+      (sum, user) => sum + Number(user.wallet?.balance || 0),
+      0
+    );
+  }, [users]);
 
   if (loading) {
     return (
@@ -308,15 +321,16 @@ export default function AdminUsersPage() {
               <h1 className="mt-2 text-3xl font-black">Users Management</h1>
 
               <p className="mt-1 text-sm text-zinc-500">
-                User details, wallet balance और transaction history
+                Secure user details, wallet balance और transaction history
               </p>
             </div>
 
             <div className="flex gap-2">
               <button
+                type="button"
                 onClick={() => loadData(false)}
                 disabled={refreshing}
-                className="rounded-2xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm font-black text-green-300 disabled:opacity-50"
+                className="rounded-2xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm font-black text-green-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {refreshing ? "Refreshing..." : "Refresh"}
               </button>
@@ -333,6 +347,7 @@ export default function AdminUsersPage() {
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
               <p className="text-xs font-bold text-blue-300">Total Users</p>
+
               <p className="mt-1 text-2xl font-black text-blue-400">
                 {users.length}
               </p>
@@ -342,14 +357,9 @@ export default function AdminUsersPage() {
               <p className="text-xs font-bold text-green-300">
                 Total Wallet Balance
               </p>
+
               <p className="mt-1 text-2xl font-black text-green-400">
-                {formatMoney(
-                  users.reduce(
-                    (sum, user) =>
-                      sum + Number(user.wallet?.balance || 0),
-                    0
-                  )
-                )}
+                {formatMoney(totalWalletBalance)}
               </p>
             </div>
 
@@ -357,6 +367,7 @@ export default function AdminUsersPage() {
               <p className="text-xs font-bold text-purple-300">
                 Total Transactions
               </p>
+
               <p className="mt-1 text-2xl font-black text-purple-400">
                 {transactions.length}
               </p>
@@ -365,11 +376,15 @@ export default function AdminUsersPage() {
         </section>
 
         <section className="mb-5 rounded-[24px] border border-zinc-800 bg-zinc-950 p-4">
-          <label className="mb-2 block text-sm font-bold text-zinc-400">
+          <label
+            htmlFor="admin-user-search"
+            className="mb-2 block text-sm font-bold text-zinc-400"
+          >
             User Search
           </label>
 
           <input
+            id="admin-user-search"
             type="text"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -391,10 +406,8 @@ export default function AdminUsersPage() {
         ) : (
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {filteredUsers.map((user) => {
-              const userTransactions = transactions.filter(
-                (transaction) =>
-                  transaction.uid === user.firebase_uid
-              );
+              const userTransactions =
+                transactionsByUid.get(user.firebase_uid) || [];
 
               return (
                 <article
@@ -441,36 +454,32 @@ export default function AdminUsersPage() {
 
                   <div className="mt-4 grid grid-cols-2 gap-3">
                     <div className="rounded-2xl border border-zinc-800 bg-black p-3">
-                      <p className="text-xs text-zinc-500">
-                        Total Battles
-                      </p>
+                      <p className="text-xs text-zinc-500">Total Battles</p>
+
                       <p className="mt-1 text-lg font-black text-white">
                         {Number(user.total_battles || 0)}
                       </p>
                     </div>
 
                     <div className="rounded-2xl border border-zinc-800 bg-black p-3">
-                      <p className="text-xs text-zinc-500">
-                        Total Wins
-                      </p>
+                      <p className="text-xs text-zinc-500">Total Wins</p>
+
                       <p className="mt-1 text-lg font-black text-green-400">
                         {Number(user.total_wins || 0)}
                       </p>
                     </div>
 
                     <div className="rounded-2xl border border-zinc-800 bg-black p-3">
-                      <p className="text-xs text-zinc-500">
-                        Transactions
-                      </p>
+                      <p className="text-xs text-zinc-500">Transactions</p>
+
                       <p className="mt-1 text-lg font-black text-purple-300">
                         {userTransactions.length}
                       </p>
                     </div>
 
                     <div className="rounded-2xl border border-zinc-800 bg-black p-3">
-                      <p className="text-xs text-zinc-500">
-                        Joined Date
-                      </p>
+                      <p className="text-xs text-zinc-500">Joined Date</p>
+
                       <p className="mt-1 text-xs font-bold text-zinc-300">
                         {formatDate(user.created_at)}
                       </p>
@@ -480,6 +489,7 @@ export default function AdminUsersPage() {
                   <div className="mt-4 space-y-2 rounded-2xl border border-zinc-800 bg-black p-3 text-xs">
                     <div className="flex justify-between gap-3">
                       <span className="text-zinc-500">Referral Code</span>
+
                       <span className="font-bold text-yellow-300">
                         {user.referral_code ||
                           user.wallet?.referral_code ||
@@ -489,6 +499,7 @@ export default function AdminUsersPage() {
 
                     <div className="flex justify-between gap-3">
                       <span className="text-zinc-500">Referred By</span>
+
                       <span className="break-all text-right font-bold text-zinc-300">
                         {user.referred_by ||
                           user.wallet?.referred_by ||
@@ -500,6 +511,7 @@ export default function AdminUsersPage() {
                       <span className="text-zinc-500">
                         First Deposit Bonus
                       </span>
+
                       <span
                         className={
                           user.wallet?.first_deposit_bonus_given
@@ -514,9 +526,8 @@ export default function AdminUsersPage() {
                     </div>
 
                     <div className="flex justify-between gap-3">
-                      <span className="text-zinc-500">
-                        Referral Bonus
-                      </span>
+                      <span className="text-zinc-500">Referral Bonus</span>
+
                       <span
                         className={
                           user.wallet?.referral_bonus_given
@@ -532,6 +543,7 @@ export default function AdminUsersPage() {
                   </div>
 
                   <button
+                    type="button"
                     onClick={() => setSelectedUid(user.firebase_uid)}
                     className="mt-4 w-full rounded-2xl border border-yellow-400/30 bg-yellow-400/10 px-4 py-3 font-black text-yellow-300 active:scale-[0.98]"
                   >
@@ -566,6 +578,7 @@ export default function AdminUsersPage() {
                 </div>
 
                 <button
+                  type="button"
                   onClick={() => setSelectedUid(null)}
                   className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-2 font-black text-red-300"
                 >
@@ -577,9 +590,8 @@ export default function AdminUsersPage() {
             <div className="space-y-5 p-4">
               <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-4">
-                  <p className="text-xs text-green-300">
-                    Current Balance
-                  </p>
+                  <p className="text-xs text-green-300">Current Balance</p>
+
                   <p className="mt-1 text-2xl font-black text-green-400">
                     {formatMoney(selectedUser.wallet?.balance)}
                   </p>
@@ -587,6 +599,7 @@ export default function AdminUsersPage() {
 
                 <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-4">
                   <p className="text-xs text-blue-300">Total Credit</p>
+
                   <p className="mt-1 text-2xl font-black text-blue-400">
                     {formatMoney(selectedTotals.plus)}
                   </p>
@@ -594,6 +607,7 @@ export default function AdminUsersPage() {
 
                 <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
                   <p className="text-xs text-red-300">Total Debit</p>
+
                   <p className="mt-1 text-2xl font-black text-red-400">
                     {formatMoney(selectedTotals.minus)}
                   </p>
@@ -608,6 +622,7 @@ export default function AdminUsersPage() {
                 <div className="mt-4 space-y-3 text-sm">
                   <div className="flex flex-col justify-between gap-1 border-b border-zinc-800 pb-3 sm:flex-row">
                     <span className="text-zinc-500">Name</span>
+
                     <span className="font-bold text-white">
                       {selectedUser.name || "—"}
                     </span>
@@ -615,6 +630,7 @@ export default function AdminUsersPage() {
 
                   <div className="flex flex-col justify-between gap-1 border-b border-zinc-800 pb-3 sm:flex-row">
                     <span className="text-zinc-500">Username</span>
+
                     <span className="font-bold text-yellow-300">
                       {selectedUser.username
                         ? `@${selectedUser.username}`
@@ -624,6 +640,7 @@ export default function AdminUsersPage() {
 
                   <div className="flex flex-col justify-between gap-1 border-b border-zinc-800 pb-3 sm:flex-row">
                     <span className="text-zinc-500">Mobile</span>
+
                     <span className="font-bold text-white">
                       {formatPhone(selectedUser.phone)}
                     </span>
@@ -631,6 +648,7 @@ export default function AdminUsersPage() {
 
                   <div className="flex flex-col justify-between gap-1 border-b border-zinc-800 pb-3 sm:flex-row">
                     <span className="text-zinc-500">Firebase UID</span>
+
                     <span className="break-all font-mono text-xs text-zinc-300">
                       {selectedUser.firebase_uid}
                     </span>
@@ -638,6 +656,7 @@ export default function AdminUsersPage() {
 
                   <div className="flex flex-col justify-between gap-1 border-b border-zinc-800 pb-3 sm:flex-row">
                     <span className="text-zinc-500">Referral Code</span>
+
                     <span className="font-bold text-yellow-300">
                       {selectedUser.referral_code ||
                         selectedUser.wallet?.referral_code ||
@@ -647,6 +666,7 @@ export default function AdminUsersPage() {
 
                   <div className="flex flex-col justify-between gap-1 border-b border-zinc-800 pb-3 sm:flex-row">
                     <span className="text-zinc-500">Referred By</span>
+
                     <span className="break-all font-bold text-zinc-300">
                       {selectedUser.referred_by ||
                         selectedUser.wallet?.referred_by ||
@@ -656,6 +676,7 @@ export default function AdminUsersPage() {
 
                   <div className="flex flex-col justify-between gap-1 border-b border-zinc-800 pb-3 sm:flex-row">
                     <span className="text-zinc-500">KYC Status</span>
+
                     <span
                       className={`w-fit rounded-full border px-3 py-1 text-xs font-black uppercase ${getKycClass(
                         selectedUser.kyc_status
@@ -666,9 +687,8 @@ export default function AdminUsersPage() {
                   </div>
 
                   <div className="flex flex-col justify-between gap-1 sm:flex-row">
-                    <span className="text-zinc-500">
-                      Account Created
-                    </span>
+                    <span className="text-zinc-500">Account Created</span>
+
                     <span className="font-bold text-zinc-300">
                       {formatDate(selectedUser.created_at)}
                     </span>
@@ -678,9 +698,7 @@ export default function AdminUsersPage() {
 
               <section>
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <h3 className="text-xl font-black">
-                    Transaction History
-                  </h3>
+                  <h3 className="text-xl font-black">Transaction History</h3>
 
                   <span className="rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1 text-xs font-black text-purple-300">
                     {selectedTransactions.length} Entries
@@ -735,17 +753,13 @@ export default function AdminUsersPage() {
                               >
                                 {sign}
                                 {formatMoney(
-                                  Math.abs(
-                                    Number(transaction.amount || 0)
-                                  )
+                                  Math.abs(Number(transaction.amount || 0))
                                 )}
                               </p>
 
                               <p className="mt-1 text-xs font-bold text-zinc-500">
                                 Balance:{" "}
-                                {formatMoney(
-                                  transaction.balance_after
-                                )}
+                                {formatMoney(transaction.balance_after)}
                               </p>
                             </div>
                           </div>
@@ -756,14 +770,9 @@ export default function AdminUsersPage() {
                             </span>
 
                             <span
-                              className={`rounded-full border px-3 py-1 text-xs font-bold ${
-                                transaction.status === "completed" ||
-                                transaction.status === "approved"
-                                  ? "border-green-500/30 bg-green-500/10 text-green-300"
-                                  : transaction.status === "rejected"
-                                  ? "border-red-500/30 bg-red-500/10 text-red-300"
-                                  : "border-yellow-500/30 bg-yellow-500/10 text-yellow-300"
-                              }`}
+                              className={`rounded-full border px-3 py-1 text-xs font-bold ${getStatusClass(
+                                transaction.status
+                              )}`}
                             >
                               {transaction.status || "—"}
                             </span>
