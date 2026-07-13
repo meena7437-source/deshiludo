@@ -174,7 +174,7 @@ export default function RulesPage() {
               </h2>
 
               <div className="space-y-1.5">
-                {rule.content.map((line, index) => (
+{(rule.content ?? []).map((line, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-yellow-400" />
 
