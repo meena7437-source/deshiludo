@@ -20,6 +20,22 @@ export default function AdminDashboardPage() {
     pendingWithdraws: 0,
     pendingKyc: 0,
     openSupport: 0,
+
+    todayCommission: 0,
+    monthCommission: 0,
+    totalCommission: 0,
+
+    todayFirstDepositBonus: 0,
+    monthFirstDepositBonus: 0,
+    totalFirstDepositBonus: 0,
+
+    todayReferralBonus: 0,
+    monthReferralBonus: 0,
+    totalReferralBonus: 0,
+
+    todayProfit: 0,
+    monthProfit: 0,
+    totalProfit: 0,
   });
 
   useEffect(() => {
@@ -52,6 +68,11 @@ export default function AdminDashboardPage() {
         { event: "*", schema: "public", table: "support_tickets" },
         () => loadStats()
       )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "wallet_transactions" },
+        () => loadStats()
+      )
       .subscribe();
 
     return () => {
@@ -59,88 +80,354 @@ export default function AdminDashboardPage() {
     };
   }, []);
 
+  function getIndiaDateParts(value?: string | null) {
+    const date = value ? new Date(value) : new Date();
+
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(date);
+
+    const getPart = (type: string) =>
+      parts.find((part) => part.type === type)?.value || "";
+
+    return {
+      year: getPart("year"),
+      month: getPart("month"),
+      day: getPart("day"),
+    };
+  }
+
+  function isSameIndiaDay(value?: string | null) {
+    if (!value) return false;
+
+    const current = getIndiaDateParts();
+    const item = getIndiaDateParts(value);
+
+    return (
+      current.year === item.year &&
+      current.month === item.month &&
+      current.day === item.day
+    );
+  }
+
+  function isSameIndiaMonth(value?: string | null) {
+    if (!value) return false;
+
+    const current = getIndiaDateParts();
+    const item = getIndiaDateParts(value);
+
+    return (
+      current.year === item.year &&
+      current.month === item.month
+    );
+  }
+
+  function transactionText(transaction: any) {
+    return [
+      transaction?.type,
+      transaction?.title,
+      transaction?.description,
+      transaction?.unique_key,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+  }
+
+  function isFirstDepositBonus(transaction: any) {
+    const text = transactionText(transaction);
+
+    return (
+      text.includes("first deposit bonus") ||
+      text.includes("first_deposit_bonus") ||
+      text.includes("first-deposit-bonus")
+    );
+  }
+
+  function isReferralBonus(transaction: any) {
+    const text = transactionText(transaction);
+
+    return (
+      text.includes("referral bonus") ||
+      text.includes("referral_bonus") ||
+      text.includes("referral-bonus")
+    );
+  }
+
+  function sumAmounts(rows: any[]) {
+    return rows.reduce(
+      (sum: number, row: any) =>
+        sum + Math.abs(Number(row?.amount || 0)),
+      0
+    );
+  }
+
   async function loadStats() {
-    const { data: wallets } = await supabase
-      .from("wallets")
-      .select("deposit_balance, winning_balance");
+    const [
+      walletsResult,
+      usersResult,
+      battlesResult,
+      depositsResult,
+      withdrawsResult,
+      supportResult,
+      transactionsResult,
+    ] = await Promise.all([
+      supabase
+        .from("wallets")
+        .select("balance,deposit_balance,winning_balance"),
 
-    const { data: users } = await supabase
-      .from("users")
-      .select("id, kyc_status, aadhaar_url, pan_url");
+      supabase
+        .from("users")
+        .select("id,kyc_status,aadhaar_url,pan_url"),
 
-    const { data: battles } = await supabase
-      .from("battles")
-      .select("status");
+      supabase
+        .from("battles")
+        .select("status,amount,admin_commission,created_at"),
 
-    const { data: deposits } = await supabase
-      .from("deposits")
-      .select("amount,status");
+      supabase
+        .from("deposits")
+        .select("amount,status"),
 
-    const { data: withdraws } = await supabase
-      .from("withdraws")
-      .select("amount,status");
+      supabase
+        .from("withdraws")
+        .select("amount,status"),
 
-    const { data: supportTickets } = await supabase
-      .from("support_tickets")
-      .select("status");
+      supabase
+        .from("support_tickets")
+        .select("status"),
+
+      supabase
+        .from("wallet_transactions")
+        .select(
+          "type,title,description,amount,status,created_at,unique_key"
+        ),
+    ]);
+
+    if (walletsResult.error) {
+      console.error("Wallet stats error:", walletsResult.error);
+    }
+
+    if (usersResult.error) {
+      console.error("Users stats error:", usersResult.error);
+    }
+
+    if (battlesResult.error) {
+      console.error("Battles stats error:", battlesResult.error);
+    }
+
+    if (depositsResult.error) {
+      console.error("Deposits stats error:", depositsResult.error);
+    }
+
+    if (withdrawsResult.error) {
+      console.error("Withdraws stats error:", withdrawsResult.error);
+    }
+
+    if (supportResult.error) {
+      console.error("Support stats error:", supportResult.error);
+    }
+
+    if (transactionsResult.error) {
+      console.error(
+        "Wallet transaction stats error:",
+        transactionsResult.error
+      );
+    }
+
+    const wallets = walletsResult.data || [];
+    const users = usersResult.data || [];
+    const battles = battlesResult.data || [];
+    const deposits = depositsResult.data || [];
+    const withdraws = withdrawsResult.data || [];
+    const supportTickets = supportResult.data || [];
+    const walletTransactions = transactionsResult.data || [];
+
+    const completedBattles = battles.filter(
+      (battle: any) => battle.status === "completed"
+    );
+
+    const commissionForBattle = (battle: any) => {
+      if (battle.status !== "completed") return 0;
+
+      const savedCommission = Number(
+        battle.admin_commission || 0
+      );
+
+      if (savedCommission > 0) {
+        return savedCommission;
+      }
+
+      const totalPot = Number(battle.amount || 0) * 2;
+      return Math.round(totalPot * 10) / 100;
+    };
+
+    const totalCommission = completedBattles.reduce(
+      (sum: number, battle: any) =>
+        sum + commissionForBattle(battle),
+      0
+    );
+
+    const todayCommission = completedBattles
+      .filter((battle: any) =>
+        isSameIndiaDay(battle.created_at)
+      )
+      .reduce(
+        (sum: number, battle: any) =>
+          sum + commissionForBattle(battle),
+        0
+      );
+
+    const monthCommission = completedBattles
+      .filter((battle: any) =>
+        isSameIndiaMonth(battle.created_at)
+      )
+      .reduce(
+        (sum: number, battle: any) =>
+          sum + commissionForBattle(battle),
+        0
+      );
+
+    const successfulTransactions = walletTransactions.filter(
+      (transaction: any) =>
+        !transaction.status ||
+        transaction.status === "approved" ||
+        transaction.status === "completed" ||
+        transaction.status === "success"
+    );
+
+    const firstDepositBonusTransactions =
+      successfulTransactions.filter(isFirstDepositBonus);
+
+    const referralBonusTransactions =
+      successfulTransactions.filter(isReferralBonus);
+
+    const totalFirstDepositBonus = sumAmounts(
+      firstDepositBonusTransactions
+    );
+
+    const todayFirstDepositBonus = sumAmounts(
+      firstDepositBonusTransactions.filter((transaction: any) =>
+        isSameIndiaDay(transaction.created_at)
+      )
+    );
+
+    const monthFirstDepositBonus = sumAmounts(
+      firstDepositBonusTransactions.filter((transaction: any) =>
+        isSameIndiaMonth(transaction.created_at)
+      )
+    );
+
+    const totalReferralBonus = sumAmounts(
+      referralBonusTransactions
+    );
+
+    const todayReferralBonus = sumAmounts(
+      referralBonusTransactions.filter((transaction: any) =>
+        isSameIndiaDay(transaction.created_at)
+      )
+    );
+
+    const monthReferralBonus = sumAmounts(
+      referralBonusTransactions.filter((transaction: any) =>
+        isSameIndiaMonth(transaction.created_at)
+      )
+    );
+
+    const todayProfit =
+      todayCommission -
+      todayFirstDepositBonus -
+      todayReferralBonus;
+
+    const monthProfit =
+      monthCommission -
+      monthFirstDepositBonus -
+      monthReferralBonus;
+
+    const totalProfit =
+      totalCommission -
+      totalFirstDepositBonus -
+      totalReferralBonus;
 
     setStats({
-      totalUsers: users?.length || 0,
+      totalUsers: users.length,
 
-      totalWallet:
-        wallets?.reduce(
-          (sum: number, wallet: any) =>
+      totalWallet: wallets.reduce(
+        (sum: number, wallet: any) => {
+          const singleBalance = Number(wallet.balance || 0);
+
+          if (singleBalance > 0) {
+            return sum + singleBalance;
+          }
+
+          return (
             sum +
             Number(wallet.deposit_balance || 0) +
-            Number(wallet.winning_balance || 0),
+            Number(wallet.winning_balance || 0)
+          );
+        },
+        0
+      ),
+
+      totalBattles: battles.length,
+
+      openBattles: battles.filter(
+        (battle: any) => battle.status === "open"
+      ).length,
+
+      completedBattles: completedBattles.length,
+
+      totalDeposits: deposits
+        .filter((deposit: any) => deposit.status === "approved")
+        .reduce(
+          (sum: number, deposit: any) =>
+            sum + Number(deposit.amount || 0),
           0
-        ) || 0,
+        ),
 
-      totalBattles: battles?.length || 0,
+      totalWithdraws: withdraws
+        .filter((withdraw: any) => withdraw.status === "approved")
+        .reduce(
+          (sum: number, withdraw: any) =>
+            sum + Number(withdraw.amount || 0),
+          0
+        ),
 
-      openBattles:
-        battles?.filter((battle: any) => battle.status === "open").length || 0,
+      pendingDeposits: deposits.filter(
+        (deposit: any) => deposit.status === "pending"
+      ).length,
 
-      completedBattles:
-        battles?.filter((battle: any) => battle.status === "completed")
-          .length || 0,
+      pendingWithdraws: withdraws.filter(
+        (withdraw: any) => withdraw.status === "pending"
+      ).length,
 
-      totalDeposits:
-        deposits
-          ?.filter((deposit: any) => deposit.status === "approved")
-          .reduce(
-            (sum: number, deposit: any) =>
-              sum + Number(deposit.amount || 0),
-            0
-          ) || 0,
+      pendingKyc: users.filter(
+        (user: any) =>
+          user.kyc_status === "pending" &&
+          (user.aadhaar_url || user.pan_url)
+      ).length,
 
-      totalWithdraws:
-        withdraws
-          ?.filter((withdraw: any) => withdraw.status === "approved")
-          .reduce(
-            (sum: number, withdraw: any) =>
-              sum + Number(withdraw.amount || 0),
-            0
-          ) || 0,
+      openSupport: supportTickets.filter(
+        (ticket: any) => ticket.status === "open"
+      ).length,
 
-      pendingDeposits:
-        deposits?.filter((deposit: any) => deposit.status === "pending")
-          .length || 0,
+      todayCommission,
+      monthCommission,
+      totalCommission,
 
-      pendingWithdraws:
-        withdraws?.filter((withdraw: any) => withdraw.status === "pending")
-          .length || 0,
+      todayFirstDepositBonus,
+      monthFirstDepositBonus,
+      totalFirstDepositBonus,
 
-      pendingKyc:
-        users?.filter(
-          (user: any) =>
-            user.kyc_status === "pending" &&
-            (user.aadhaar_url || user.pan_url)
-        ).length || 0,
+      todayReferralBonus,
+      monthReferralBonus,
+      totalReferralBonus,
 
-      openSupport:
-        supportTickets?.filter((ticket: any) => ticket.status === "open")
-          .length || 0,
+      todayProfit,
+      monthProfit,
+      totalProfit,
     });
   }
 
@@ -199,14 +486,91 @@ export default function AdminDashboardPage() {
     },
   ];
 
+  const money = (value: number) =>
+    `₹${Number(value || 0).toLocaleString("en-IN", {
+      maximumFractionDigits: 2,
+    })}`;
+
+  const profitCards = [
+    {
+      icon: "💰",
+      title: "Today Net Profit",
+      value: money(stats.todayProfit),
+      note: `Commission ${money(
+        stats.todayCommission
+      )} − Bonus ${money(
+        stats.todayFirstDepositBonus +
+          stats.todayReferralBonus
+      )}`,
+      color:
+        stats.todayProfit >= 0
+          ? "border-green-500/30 bg-green-500/10 text-green-300"
+          : "border-red-500/30 bg-red-500/10 text-red-300",
+    },
+    {
+      icon: "📅",
+      title: "This Month Profit",
+      value: money(stats.monthProfit),
+      note: `Commission ${money(
+        stats.monthCommission
+      )} − Bonus ${money(
+        stats.monthFirstDepositBonus +
+          stats.monthReferralBonus
+      )}`,
+      color:
+        stats.monthProfit >= 0
+          ? "border-blue-500/30 bg-blue-500/10 text-blue-300"
+          : "border-red-500/30 bg-red-500/10 text-red-300",
+    },
+    {
+      icon: "🏆",
+      title: "Total Net Profit",
+      value: money(stats.totalProfit),
+      note: `Commission ${money(
+        stats.totalCommission
+      )} − Bonus ${money(
+        stats.totalFirstDepositBonus +
+          stats.totalReferralBonus
+      )}`,
+      color:
+        stats.totalProfit >= 0
+          ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-300"
+          : "border-red-500/30 bg-red-500/10 text-red-300",
+    },
+    {
+      icon: "🎮",
+      title: "Battle Commission",
+      value: money(stats.totalCommission),
+      note: "Sirf completed battles ka total",
+      color:
+        "border-purple-500/30 bg-purple-500/10 text-purple-300",
+    },
+    {
+      icon: "🎁",
+      title: "First Deposit Bonus",
+      value: money(stats.totalFirstDepositBonus),
+      note: "Users ko diya gaya total bonus",
+      color:
+        "border-orange-500/30 bg-orange-500/10 text-orange-300",
+    },
+    {
+      icon: "👥",
+      title: "Referral Bonus",
+      value: money(stats.totalReferralBonus),
+      note: "Referrers ko diya gaya total bonus",
+      color:
+        "border-cyan-500/30 bg-cyan-500/10 text-cyan-300",
+    },
+  ];
+
   const cards = [
     ["👥", "Total Users", stats.totalUsers, "text-blue-300"],
-    ["💰", "Wallet Balance", `₹${stats.totalWallet}`, "text-green-300"],
+    ["💰", "Wallet Balance", money(stats.totalWallet), "text-green-300"],
     ["🎮", "Total Battles", stats.totalBattles, "text-yellow-300"],
     ["🟢", "Open Battles", stats.openBattles, "text-blue-300"],
     ["✅", "Completed", stats.completedBattles, "text-green-300"],
-    ["💳", "Deposits", `₹${stats.totalDeposits}`, "text-green-300"],
-    ["🏧", "Withdraws", `₹${stats.totalWithdraws}`, "text-red-300"],
+    ["💳", "Deposits", money(stats.totalDeposits), "text-green-300"],
+    ["🏧", "Withdraws", money(stats.totalWithdraws), "text-red-300"],
     ["⏳", "Pending Deposits", stats.pendingDeposits, "text-yellow-300"],
     ["⚠️", "Pending Withdraws", stats.pendingWithdraws, "text-red-300"],
     ["🪪", "Pending KYC", stats.pendingKyc, "text-purple-300"],
@@ -247,7 +611,7 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-green-300">Approved Deposits</p>
 
               <p className="mt-1 text-2xl font-black text-green-400">
-                ₹{stats.totalDeposits}
+                {money(stats.totalDeposits)}
               </p>
             </div>
 
@@ -255,7 +619,7 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-red-300">Approved Withdraws</p>
 
               <p className="mt-1 text-2xl font-black text-red-400">
-                ₹{stats.totalWithdraws}
+                {money(stats.totalWithdraws)}
               </p>
             </div>
 
@@ -266,6 +630,51 @@ export default function AdminDashboardPage() {
                 {stats.openSupport}
               </p>
             </div>
+          </div>
+        </section>
+
+        <section className="mb-6">
+          <div className="mb-4">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
+              Earnings
+            </p>
+
+            <h2 className="mt-1 text-2xl font-black">
+              Profit Analytics
+            </h2>
+
+            <p className="mt-1 text-xs text-zinc-500">
+              Net Profit = Completed Battle Commission − First Deposit Bonus − Referral Bonus
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {profitCards.map((item) => (
+              <div
+                key={item.title}
+                className={`rounded-[24px] border p-4 shadow-xl shadow-black/30 ${item.color}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-2xl">{item.icon}</span>
+
+                  <span className="rounded-full border border-white/10 bg-black/30 px-2.5 py-1 text-[10px] font-black uppercase">
+                    Live
+                  </span>
+                </div>
+
+                <p className="mt-4 text-xs font-bold opacity-80">
+                  {item.title}
+                </p>
+
+                <p className="mt-1 text-3xl font-black">
+                  {item.value}
+                </p>
+
+                <p className="mt-2 text-[10px] leading-4 opacity-70">
+                  {item.note}
+                </p>
+              </div>
+            ))}
           </div>
         </section>
 
