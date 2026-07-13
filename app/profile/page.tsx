@@ -182,11 +182,6 @@ export default function ProfilePage() {
       return;
     }
 
-    if (savedName.trim() && savedUsername.trim()) {
-      toast.error("Name aur username ek baar save hone ke baad change nahi ho sakte");
-      return;
-    }
-
     const cleanName = name.trim().replace(/\s+/g, " ");
     const cleanUsername = username.trim().toLowerCase();
 
@@ -342,6 +337,24 @@ export default function ProfilePage() {
     } catch {
       toast.error("Referral code copy nahi hua");
     }
+  }
+
+
+  function referralLink() {
+    return `https://deshiludo.in/?ref=${referralCode}`;
+  }
+
+  async function shareReferral(platform:"whatsapp"|"telegram"|"instagram"|"copy"){
+    const message=`🎮 DeshiLudo\n\nReferral Code: ${referralCode}\n${referralLink()}`;
+    if(platform==="copy"||platform==="instagram"){
+      await navigator.clipboard.writeText(message);
+      toast.success(platform==="copy"?"Referral link copied":"Message copied. Instagram me paste karein.");
+      return;
+    }
+    const url=platform==="whatsapp"
+      ?`https://wa.me/?text=${encodeURIComponent(message)}`
+      :`https://t.me/share/url?url=${encodeURIComponent(referralLink())}&text=${encodeURIComponent("Join DeshiLudo using my referral code: "+referralCode)}`;
+    window.open(url,"_blank");
   }
 
   async function logout() {
@@ -982,9 +995,6 @@ export default function ProfilePage() {
     return null;
   }
 
-  const profileLocked =
-    Boolean(savedName.trim()) && Boolean(savedUsername.trim());
-
   const profileChanged =
     name.trim().replace(/\s+/g, " ") !== savedName ||
     username.trim().toLowerCase() !== savedUsername;
@@ -1067,7 +1077,7 @@ export default function ProfilePage() {
               maxLength={50}
               onChange={(event) => setName(event.target.value)}
               placeholder="Apna naam daalo"
-              disabled={savingProfile || profileLocked}
+              disabled={savingProfile}
               className="mb-2.5 mt-1 w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-60"
             />
 
@@ -1092,33 +1102,23 @@ export default function ProfilePage() {
                   )
                 }
                 placeholder="sher123"
-                disabled={savingProfile || profileLocked}
+                disabled={savingProfile}
                 className="w-full rounded-xl border border-zinc-800 bg-black py-2.5 pl-7 pr-3 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-60"
               />
             </div>
 
-            <p
-              className={`mt-1 text-[9px] ${
-                profileLocked ? "text-green-400" : "text-zinc-600"
-              }`}
-            >
-              {profileLocked
-                ? "Name aur username lock ho chuke hain. Ab edit nahi ho sakte."
-                : "4–20 characters • small letters, numbers aur underscore"}
+            <p className="mt-1 text-[9px] text-zinc-600">
+              4–20 characters • small letters, numbers aur underscore
             </p>
 
             <button
               type="button"
               onClick={saveBasicProfile}
-              disabled={
-                savingProfile || profileLocked || !profileChanged
-              }
+              disabled={savingProfile || !profileChanged}
               className="mt-3 w-full rounded-xl bg-yellow-400 py-2.5 text-sm font-black text-black disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
             >
               {savingProfile
                 ? "Saving..."
-                : profileLocked
-                ? "Name & Username Locked"
                 : "Save Name & Username"}
             </button>
           </section>
@@ -1181,9 +1181,13 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            <p className="mt-1.5 text-[10px] text-zinc-500">
-              Friend first deposit karega to aapko 5% bonus milega.
-            </p>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => shareReferral("whatsapp")} className="rounded-lg bg-green-600 py-2 text-xs font-black text-white">WhatsApp</button>
+              <button type="button" onClick={() => shareReferral("telegram")} className="rounded-lg bg-sky-600 py-2 text-xs font-black text-white">Telegram</button>
+              <button type="button" onClick={() => shareReferral("instagram")} className="rounded-lg bg-pink-600 py-2 text-xs font-black text-white">Instagram</button>
+              <button type="button" onClick={() => shareReferral("copy")} className="rounded-lg bg-zinc-800 py-2 text-xs font-black text-white">Copy Link</button>
+            </div>
           </section>
 
           <section className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
