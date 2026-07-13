@@ -610,106 +610,6 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        <div className="mb-3 rounded-2xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-zinc-950 p-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs text-purple-300">
-                My Bet
-              </p>
-
-              <h2 className="text-lg font-black text-white">
-                Your Active Battles
-              </h2>
-            </div>
-
-            <div className="rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1">
-              <p className="text-[11px] font-bold text-purple-400">
-                {myBattles.length} Active
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {myBattles.length === 0 ? (
-          <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
-            <p className="text-sm text-zinc-500">
-              Abhi aapki koi active bet nahi hai.
-            </p>
-          </div>
-        ) : (
-          <div className="mb-5 space-y-2">
-            {myBattles.map((battle) => {
-              const isCreator = battle.creator_uid === uid;
-              const isOpen = battle.status === "open";
-
-              const creatorDisplayName =
-                getCreatorDisplayName(battle);
-
-              const joinerDisplayName =
-                getJoinerDisplayName(battle);
-
-              return (
-                <div
-                  key={battle.id}
-                  className="rounded-2xl border border-purple-500/30 bg-zinc-950 p-3 shadow-lg"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-lg font-black text-yellow-400">
-                          ₹{battle.amount}
-                        </p>
-
-                        <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-purple-400">
-                          {battle.status}
-                        </span>
-                      </div>
-
-                      <p className="mt-1 truncate text-xs text-zinc-300">
-                        {isOpen
-                          ? `${creatorDisplayName} waiting for player`
-                          : `${creatorDisplayName} vs ${joinerDisplayName}`}
-                      </p>
-
-                      <p className="mt-1 text-[11px] text-zinc-500">
-                        {getBattleStatusText(battle)} • Battle ID #
-                        {battle.id}
-                      </p>
-                    </div>
-
-                    <div className="flex shrink-0 flex-col gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          router.push(`/battle/${battle.id}`)
-                        }
-                        className="rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-xs font-black text-purple-300"
-                      >
-                        Open Battle
-                      </button>
-
-                      {isOpen && isCreator && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            cancelOpenBattle(battle.id)
-                          }
-                          disabled={cancellingId === battle.id}
-                          className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-black text-red-400 disabled:opacity-60"
-                        >
-                          {cancellingId === battle.id
-                            ? "Cancelling..."
-                            : "Cancel"}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
         <div className="mb-3 rounded-2xl border border-yellow-500/30 bg-gradient-to-br from-zinc-950 to-zinc-900 p-3">
           <div className="flex items-center justify-between">
             <div>
@@ -801,26 +701,96 @@ export default function DashboardPage() {
               </p>
 
               <h2 className="text-lg font-black text-white">
-                Running Battles
+                Your Bets & Running Battles
               </h2>
             </div>
 
             <div className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1">
               <p className="text-[11px] font-bold text-blue-400">
-                {liveBattles.length} Live
+                {myBattles.length + liveBattles.length} Active
               </p>
             </div>
           </div>
         </div>
 
-        {liveBattles.length === 0 ? (
+        {myBattles.length === 0 && liveBattles.length === 0 ? (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
             <p className="text-sm text-zinc-500">
-              Abhi koi dusri live battle nahi hai.
+              Abhi koi active ya live battle nahi hai.
             </p>
           </div>
         ) : (
           <div className="space-y-2">
+            {myBattles.map((battle) => {
+              const isCreator = battle.creator_uid === uid;
+              const isOpen = battle.status === "open";
+
+              const creatorDisplayName =
+                getCreatorDisplayName(battle);
+
+              const joinerDisplayName =
+                getJoinerDisplayName(battle);
+
+              return (
+                <div
+                  key={`my-${battle.id}`}
+                  className="rounded-2xl border border-purple-500/30 bg-zinc-950 p-3 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-lg font-black text-yellow-400">
+                          ₹{battle.amount}
+                        </p>
+
+                        <span className="rounded-full border border-purple-500/20 bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold uppercase text-purple-400">
+                          {battle.status}
+                        </span>
+                      </div>
+
+                      <p className="mt-1 truncate text-xs text-zinc-300">
+                        {isOpen
+                          ? `${creatorDisplayName} waiting for player`
+                          : `${creatorDisplayName} vs ${joinerDisplayName}`}
+                      </p>
+
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        Your Battle • {getBattleStatusText(battle)} • Battle ID #
+                        {battle.id}
+                      </p>
+                    </div>
+
+                    <div className="flex shrink-0 flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(`/battle/${battle.id}`)
+                        }
+                        className="rounded-xl border border-purple-500/30 bg-purple-500/10 px-4 py-2 text-xs font-black text-purple-300"
+                      >
+                        Open Battle
+                      </button>
+
+                      {isOpen && isCreator && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            cancelOpenBattle(battle.id)
+                          }
+                          disabled={cancellingId === battle.id}
+                          className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2 text-xs font-black text-red-400 disabled:opacity-60"
+                        >
+                          {cancellingId === battle.id
+                            ? "Cancelling..."
+                            : "Cancel"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
             {liveBattles.map((battle) => {
               const canOpenBattle =
                 battle.creator_uid === uid ||
@@ -828,7 +798,7 @@ export default function DashboardPage() {
 
               return (
                 <div
-                  key={battle.id}
+                  key={`live-${battle.id}`}
                   className="rounded-2xl border border-zinc-800 bg-zinc-950 p-3 shadow-lg"
                 >
                   <div className="flex items-center justify-between gap-3">
