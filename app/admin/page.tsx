@@ -633,6 +633,22 @@ export default function AdminDashboardPage() {
           </div>
         </section>
 
+        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+          {mainActions.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`rounded-[24px] border p-5 shadow-xl shadow-black/30 transition active:scale-[0.98] ${item.color}`}
+            >
+              <p className="text-xl font-black">{item.title}</p>
+
+              <p className="mt-2 text-sm opacity-80">{item.desc}</p>
+
+              <p className="mt-4 text-sm font-black">Open →</p>
+            </Link>
+          ))}
+        </section>
+
         <section className="mb-6">
           <div className="mb-4">
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-yellow-400">
@@ -676,22 +692,6 @@ export default function AdminDashboardPage() {
               </div>
             ))}
           </div>
-        </section>
-
-        <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
-          {mainActions.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`rounded-[24px] border p-5 shadow-xl shadow-black/30 transition active:scale-[0.98] ${item.color}`}
-            >
-              <p className="text-xl font-black">{item.title}</p>
-
-              <p className="mt-2 text-sm opacity-80">{item.desc}</p>
-
-              <p className="mt-4 text-sm font-black">Open →</p>
-            </Link>
-          ))}
         </section>
 
         {(stats.pendingDeposits > 0 ||
