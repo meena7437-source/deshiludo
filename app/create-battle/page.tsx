@@ -11,6 +11,9 @@ export default function CreateBattlePage() {
   const router = useRouter();
 
   const [amount, setAmount] = useState("");
+  const [creatorCondition, setCreatorCondition] = useState(
+    "No Theme, No Custom Dice, Default Game Play Only"
+  );
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(false);
   const [walletLoading, setWalletLoading] = useState(true);
@@ -107,6 +110,13 @@ export default function CreateBattlePage() {
       return;
     }
 
+    const cleanCondition = creatorCondition.trim().replace(/\s+/g, " ");
+
+    if (cleanCondition.length > 200) {
+      toast.error("Game condition maximum 200 characters ki ho sakti hai");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -114,6 +124,7 @@ export default function CreateBattlePage() {
         user_id_input: user.uid,
         phone_input: user.phoneNumber || "",
         amount_input: battleAmount,
+        creator_condition_input: cleanCondition || null,
       });
 
       if (error) {
@@ -202,6 +213,44 @@ export default function CreateBattlePage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <div>
+                <label className="block text-sm font-bold">
+                  Game Conditions
+                </label>
+                <p className="mt-0.5 text-[10px] text-zinc-500">
+                  Joiner ko battle join karne se pehle ye condition dikhai degi.
+                </p>
+              </div>
+
+              <span
+                className={`text-[10px] font-bold ${
+                  creatorCondition.length > 200
+                    ? "text-red-400"
+                    : "text-zinc-500"
+                }`}
+              >
+                {creatorCondition.length}/200
+              </span>
+            </div>
+
+            <textarea
+              value={creatorCondition}
+              maxLength={200}
+              rows={4}
+              onChange={(event) => setCreatorCondition(event.target.value)}
+              placeholder="Example: No Theme, No Custom Dice, Default Game Play Only"
+              disabled={loading}
+              className="w-full resize-none rounded-xl border border-zinc-800 bg-black p-3 text-sm leading-5 text-white outline-none focus:border-yellow-400 disabled:opacity-60"
+            />
+
+            <p className="mt-2 text-[10px] leading-4 text-yellow-300">
+              Sirf wahi condition likhen jo game play se judi ho. Galat, abusive ya
+              platform rules ke khilaf condition valid nahi hogi.
+            </p>
           </div>
 
           <div className="mb-5 rounded-2xl border border-zinc-800 bg-zinc-950 p-4">

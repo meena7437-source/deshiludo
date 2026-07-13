@@ -36,6 +36,7 @@ export default function BattlePage() {
 
   const [loading, setLoading] = useState(true);
   const [savingRoom, setSavingRoom] = useState(false);
+  const [cancellingJoin, setCancellingJoin] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const lastBattleRef = useRef<any>(null);
@@ -118,7 +119,7 @@ export default function BattlePage() {
             }
 
             await loadPlayerNames(updatedBattle);
-          }
+          },
         )
         .subscribe();
     });
@@ -134,7 +135,7 @@ export default function BattlePage() {
 
   async function loadPlayerNames(battleData: any) {
     const userIds = [battleData?.creator_uid, battleData?.joiner_uid].filter(
-      Boolean
+      Boolean,
     );
 
     if (userIds.length === 0) return;
@@ -150,11 +151,11 @@ export default function BattlePage() {
     }
 
     const creator = data?.find(
-      (item: any) => item.firebase_uid === battleData.creator_uid
+      (item: any) => item.firebase_uid === battleData.creator_uid,
     );
 
     const joiner = data?.find(
-      (item: any) => item.firebase_uid === battleData.joiner_uid
+      (item: any) => item.firebase_uid === battleData.joiner_uid,
     );
 
     setCreatorInfo({
@@ -353,6 +354,64 @@ export default function BattlePage() {
     await loadBattle(false);
   }
 
+  async function cancelJoinBeforeRoom() {
+    const user = auth.currentUser;
+
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
+
+    if (!battle || !isJoiner()) {
+      toast.error("Sirf joiner cancel kar sakta hai");
+      return;
+    }
+
+    if (battle.room_code) {
+      toast.error("Room code aane ke baad join cancel nahi hoga");
+      return;
+    }
+
+    setCancellingJoin(true);
+
+    try {
+      const { data, error } = await supabase.rpc(
+        "cancel_join_before_room_safe",
+        {
+          battle_id_input: Number(battleId),
+          joiner_uid_input: user.uid,
+        },
+      );
+
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      if (data === "join_cancelled_refunded") {
+        toast.success("Join cancel ho gaya, refund done ✅");
+        router.replace("/dashboard");
+        return;
+      }
+
+      if (data === "room_code_already_added") {
+        toast.error("Room code add ho chuka hai, ab cancel nahi hoga");
+      } else if (data === "unauthorized") {
+        toast.error("Aap is battle ke joiner nahi ho");
+      } else if (data === "battle_not_found") {
+        toast.error("Battle nahi mili");
+      } else {
+        toast.error(String(data || "Join cancel nahi hua"));
+      }
+
+      await loadBattle(false);
+    } catch (error: any) {
+      toast.error(error?.message || "Join cancel failed");
+    } finally {
+      setCancellingJoin(false);
+    }
+  }
+
   async function copyRoomCode() {
     if (!battle?.room_code) {
       toast.error("Room code abhi available nahi hai");
@@ -547,7 +606,7 @@ export default function BattlePage() {
 
             <span
               className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${statusClass(
-                battle.status
+                battle.status,
               )}`}
             >
               {battle.status}
@@ -601,8 +660,8 @@ export default function BattlePage() {
                 {battle.joiner_result_uploaded
                   ? claimBadge(battle.joiner_claim)
                   : battle.joiner_uid
-                  ? "Waiting result"
-                  : "Not joined"}
+                    ? "Waiting result"
+                    : "Not joined"}
               </p>
             </div>
           </div>
@@ -654,6 +713,22 @@ export default function BattlePage() {
               </p>
             </div>
           )}
+        </section>
+
+        <section className="mb-3 rounded-2xl border border-yellow-500/25 bg-yellow-400/5 p-3.5">
+          <h2 className="text-sm font-black text-yellow-400">
+            Creator Game Conditions
+          </h2>
+
+          <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-zinc-300">
+            {battle.creator_condition?.trim() ||
+              "No special condition. Platform ke default rules follow honge."}
+          </p>
+
+          <p className="mt-2 text-[9px] leading-4 text-zinc-500">
+            Platform ke official rules hamesha creator ki condition se upar
+            rahenge.
+          </p>
         </section>
 
         <section className="mb-3 rounded-2xl border border-zinc-800 bg-zinc-950 p-3.5">
@@ -709,6 +784,22 @@ export default function BattlePage() {
             </div>
           )}
 
+          {isJoiner() &&
+            battle.joiner_uid &&
+            !battle.room_code &&
+            !battleClosed && (
+              <button
+                type="button"
+                onClick={cancelJoinBeforeRoom}
+                disabled={cancellingJoin}
+                className="mt-2.5 w-full rounded-xl border border-red-500/40 bg-red-500/10 py-3 text-sm font-black text-red-300 disabled:opacity-60"
+              >
+                {cancellingJoin
+                  ? "Cancelling Join..."
+                  : "Cancel Join & Get Refund"}
+              </button>
+            )}
+
           {battle.room_code && (
             <button
               type="button"
@@ -759,8 +850,8 @@ export default function BattlePage() {
                           ? item === "win"
                             ? "bg-green-500 text-white"
                             : item === "lose"
-                            ? "bg-red-500 text-white"
-                            : "bg-yellow-400 text-black"
+                              ? "bg-red-500 text-white"
+                              : "bg-yellow-400 text-black"
                           : "border border-zinc-800 bg-black text-zinc-400"
                       }`}
                     >

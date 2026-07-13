@@ -40,14 +40,14 @@ const rules = [
     ],
   },
   {
-    title: "6. Default Ludo Settings",
-    content: [
-      "सभी Battles केवल Ludo की Default Classic Settings पर खेली जाएँगी।",
-      "Default Board, Default Goti, Default Dice और Default Game Settings का उपयोग करना अनिवार्य है।",
-      "Theme, Custom Goti, Custom Dice, Mod, Hack या किसी अन्य बदलाव का उपयोग प्रतिबंधित है।",
-      "नियमों का उल्लंघन होने पर Battle Claim अस्वीकार की जा सकती है।",
-    ],
-  },
+{
+  title: "6. Battle Join करने से पहले शर्तें पढ़ें",
+  content: [
+    "Battle Join करने से पहले Creator द्वारा लिखी गई सभी शर्तों को ध्यानपूर्वक पढ़ें।",
+    "यदि आप उन सभी शर्तों का पालन कर सकते हैं, तभी Battle Join करें।",
+    "अन्यथा Battle Cancel करके किसी अन्य उपयुक्त Player के साथ नई Battle शुरू करें।",
+  ],
+},
   {
     title: "7. Result और Screenshot",
     content: [
