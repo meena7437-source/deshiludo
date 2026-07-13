@@ -40,6 +40,7 @@ const rules = [
     ],
   },
   {
+},
 {
   title: "6. Battle Join करने से पहले शर्तें पढ़ें",
   content: [
