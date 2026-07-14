@@ -43,6 +43,7 @@ export default function BattlePage() {
 
   useEffect(() => {
     let channel: any = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -62,10 +63,14 @@ export default function BattlePage() {
             table: "battles",
             filter: `id=eq.${battleId}`,
           },
-          async (payload) => {
-            const updatedBattle: any = payload.new;
+          async () => {
+            const { data: updatedBattle, error: refreshError } = await supabase
+              .from("battles")
+              .select("*")
+              .eq("id", battleId)
+              .maybeSingle();
 
-            if (!updatedBattle) return;
+            if (refreshError || !updatedBattle) return;
 
             const oldBattle = lastBattleRef.current;
 
@@ -122,6 +127,11 @@ export default function BattlePage() {
           },
         )
         .subscribe();
+
+      // Realtime miss hone par bhi creator/joiner ko fresh battle data milega.
+      pollTimer = setInterval(() => {
+        loadBattle(false);
+      }, 3000);
     });
 
     return () => {
@@ -129,6 +139,10 @@ export default function BattlePage() {
 
       if (channel) {
         supabase.removeChannel(channel);
+      }
+
+      if (pollTimer) {
+        clearInterval(pollTimer);
       }
     };
   }, [battleId, router]);
@@ -641,9 +655,7 @@ export default function BattlePage() {
                 <p className="text-[9px] text-zinc-500">Game Mode</p>
                 <p
                   className={`mt-0.5 text-sm font-black ${
-                    getGameType() === "ulta"
-                      ? "text-red-400"
-                      : "text-blue-400"
+                    getGameType() === "ulta" ? "text-red-400" : "text-blue-400"
                   }`}
                 >
                   {getGameTypeLabel()}
@@ -658,9 +670,7 @@ export default function BattlePage() {
 
           {getGameType() === "ulta" && (
             <div className="mt-2.5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
-              <p className="text-xs font-black text-red-300">
-                Ulta Ludo Rule
-              </p>
+              <p className="text-xs font-black text-red-300">Ulta Ludo Rule</p>
               <p className="mt-1 text-[10px] leading-5 text-red-100/80">
                 Normal Ludo me jo player lose karega, Ulta Ludo me wahi winner
                 maana jayega. Result me winner ko WIN hi dikhaya jayega.

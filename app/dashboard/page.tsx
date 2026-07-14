@@ -162,19 +162,26 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<number | null>(null);
   const [cancellingId, setCancellingId] = useState<number | null>(null);
+  const [selectedGame, setSelectedGame] = useState<
+    "classic" | "ulta" | "teamup"
+  >("classic");
 
-  const myBattles = allBattles.filter(
+  const selectedGameBattles = allBattles.filter(
+    (battle) => getGameType(battle) === selectedGame,
+  );
+
+  const myBattles = selectedGameBattles.filter(
     (battle) => battle.creator_uid === uid || battle.joiner_uid === uid,
   );
 
-  const openBattles = allBattles.filter(
+  const openBattles = selectedGameBattles.filter(
     (battle) =>
       battle.status === "open" &&
       battle.creator_uid !== uid &&
       battle.joiner_uid !== uid,
   );
 
-  const liveBattles = allBattles.filter(
+  const liveBattles = selectedGameBattles.filter(
     (battle) =>
       (battle.status === "matched" || battle.status === "running") &&
       battle.creator_uid !== uid &&
@@ -678,8 +685,22 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <Link href="/create-battle?game=classic" className="group block">
-            <article className="relative min-h-[405px] overflow-hidden rounded-[24px] border-2 border-cyan-400/75 bg-[linear-gradient(155deg,#071932_0%,#041020_55%,#02050b_100%)] p-5 shadow-[0_0_25px_rgba(34,211,238,0.24),inset_0_0_35px_rgba(14,165,233,0.08)] transition hover:-translate-y-1">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedGame("classic")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setSelectedGame("classic");
+            }}
+            className="group block cursor-pointer"
+          >
+            <article
+              className={`relative min-h-[405px] overflow-hidden rounded-[24px] border-2 bg-[linear-gradient(155deg,#071932_0%,#041020_55%,#02050b_100%)] p-5 transition hover:-translate-y-1 ${
+                selectedGame === "classic"
+                  ? "border-cyan-300 shadow-[0_0_38px_rgba(34,211,238,0.48),inset_0_0_35px_rgba(14,165,233,0.12)]"
+                  : "border-cyan-400/55 shadow-[0_0_20px_rgba(34,211,238,0.18)]"
+              }`}
+            >
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_37%,rgba(14,165,233,0.20),transparent_38%)]" />
               <div className="relative flex h-full flex-col">
                 <div>
@@ -694,17 +715,35 @@ export default function DashboardPage() {
                 <div className="mt-auto">
                   <p className="text-sm font-bold">2 Players</p>
                   <p className="mt-1 text-sm text-zinc-200">Minimum ₹100</p>
-                  <div className="mt-4 flex items-center justify-between rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-700 to-blue-500 px-5 py-3 text-base font-black shadow-[0_8px_22px_rgba(37,99,235,0.35)]">
+                  <Link
+                    href="/create-battle?game=classic"
+                    onClick={(event) => event.stopPropagation()}
+                    className="mt-4 flex items-center justify-between rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-700 to-blue-500 px-5 py-3 text-base font-black shadow-[0_8px_22px_rgba(37,99,235,0.35)]"
+                  >
                     <span>PLAY NOW</span>
                     <span>›</span>
-                  </div>
+                  </Link>
                 </div>
               </div>
             </article>
-          </Link>
+          </div>
 
-          <Link href="/create-battle?game=ulta" className="group block">
-            <article className="relative min-h-[405px] overflow-hidden rounded-[24px] border-2 border-red-400/80 bg-[linear-gradient(155deg,#26080d_0%,#140509_55%,#02050b_100%)] p-5 shadow-[0_0_27px_rgba(239,68,68,0.28),inset_0_0_35px_rgba(239,68,68,0.08)] transition hover:-translate-y-1">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setSelectedGame("ulta")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") setSelectedGame("ulta");
+            }}
+            className="group block cursor-pointer"
+          >
+            <article
+              className={`relative min-h-[405px] overflow-hidden rounded-[24px] border-2 bg-[linear-gradient(155deg,#26080d_0%,#140509_55%,#02050b_100%)] p-5 transition hover:-translate-y-1 ${
+                selectedGame === "ulta"
+                  ? "border-red-300 shadow-[0_0_40px_rgba(239,68,68,0.50),inset_0_0_35px_rgba(239,68,68,0.12)]"
+                  : "border-red-400/55 shadow-[0_0_20px_rgba(239,68,68,0.18)]"
+              }`}
+            >
               <span className="absolute right-0 top-0 rounded-bl-xl border-b border-l border-yellow-400/40 bg-red-700 px-3 py-2 text-xs font-black text-yellow-300">
                 NEW
               </span>
@@ -722,16 +761,27 @@ export default function DashboardPage() {
                 <div className="mt-auto">
                   <p className="text-sm font-bold">2 Players</p>
                   <p className="mt-1 text-sm text-zinc-200">Minimum ₹100</p>
-                  <div className="mt-4 flex items-center justify-between rounded-xl border border-red-300/30 bg-gradient-to-r from-red-700 to-red-500 px-5 py-3 text-base font-black shadow-[0_8px_22px_rgba(220,38,38,0.35)]">
+                  <Link
+                    href="/create-battle?game=ulta"
+                    onClick={(event) => event.stopPropagation()}
+                    className="mt-4 flex items-center justify-between rounded-xl border border-red-300/30 bg-gradient-to-r from-red-700 to-red-500 px-5 py-3 text-base font-black shadow-[0_8px_22px_rgba(220,38,38,0.35)]"
+                  >
                     <span>PLAY NOW</span>
                     <span>›</span>
-                  </div>
+                  </Link>
                 </div>
               </div>
             </article>
-          </Link>
+          </div>
 
-          <article className="relative min-h-[405px] overflow-hidden rounded-[24px] border-2 border-yellow-400/75 bg-[linear-gradient(155deg,#241803_0%,#100b02_55%,#02050b_100%)] p-5 shadow-[0_0_27px_rgba(234,179,8,0.25),inset_0_0_35px_rgba(234,179,8,0.08)]">
+          <article
+            onClick={() => setSelectedGame("teamup")}
+            className={`relative min-h-[405px] cursor-pointer overflow-hidden rounded-[24px] border-2 bg-[linear-gradient(155deg,#241803_0%,#100b02_55%,#02050b_100%)] p-5 ${
+              selectedGame === "teamup"
+                ? "border-yellow-300 shadow-[0_0_40px_rgba(234,179,8,0.46),inset_0_0_35px_rgba(234,179,8,0.12)]"
+                : "border-yellow-400/55 shadow-[0_0_20px_rgba(234,179,8,0.18)]"
+            }`}
+          >
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_37%,rgba(234,179,8,0.20),transparent_40%)]" />
             <div className="relative flex h-full flex-col">
               <div>
@@ -761,7 +811,28 @@ export default function DashboardPage() {
           </article>
         </div>
 
-        <div className="mt-8 mb-3 flex items-center justify-between">
+        <div className="mt-7 rounded-2xl border border-white/10 bg-[#07101d] px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+            Showing battles for
+          </p>
+          <p
+            className={`mt-1 text-lg font-black ${
+              selectedGame === "ulta"
+                ? "text-red-400"
+                : selectedGame === "teamup"
+                  ? "text-yellow-400"
+                  : "text-cyan-400"
+            }`}
+          >
+            {selectedGame === "ulta"
+              ? "Ulta Ludo"
+              : selectedGame === "teamup"
+                ? "Team Up Ludo — Coming Soon"
+                : "Ludo Classic"}
+          </p>
+        </div>
+
+        <div className="mt-5 mb-3 flex items-center justify-between">
           <h2 className="text-lg font-black sm:text-xl">⚔ OPEN BATTLES</h2>
           <span className="text-sm font-bold text-yellow-400">View All ›</span>
         </div>
