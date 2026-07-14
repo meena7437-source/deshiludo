@@ -8,12 +8,61 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
+
+type Announcement = {
+  id: number;
+  message: string;
+  is_active: boolean;
+  updated_at?: string | null;
+};
+
+type AnnouncementResponse = {
+  success: boolean;
+  message?: string;
+  announcement?: Announcement | null;
+};
+
 export default function DashboardPage() {
   const router = useRouter();
 
   const [balance, setBalance] = useState(0);
   const [playerDisplay, setPlayerDisplay] = useState("");
   const [loading, setLoading] = useState(true);
+  const [announcement, setAnnouncement] = useState("");
+  const [announcementActive, setAnnouncementActive] = useState(false);
+
+  useEffect(() => {
+    async function loadAnnouncement() {
+      try {
+        const response = await fetch("/api/admin/announcement", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const result = (await response.json()) as AnnouncementResponse;
+
+        if (
+          response.ok &&
+          result.success &&
+          result.announcement?.is_active === true &&
+          result.announcement.message?.trim()
+        ) {
+          setAnnouncement(result.announcement.message.trim());
+          setAnnouncementActive(true);
+        } else {
+          setAnnouncement("");
+          setAnnouncementActive(false);
+        }
+      } catch (error) {
+        console.error("Dashboard announcement load error:", error);
+        setAnnouncement("");
+        setAnnouncementActive(false);
+      }
+    }
+
+    loadAnnouncement();
+  }, []);
 
   useEffect(() => {
     let walletChannel: any = null;
@@ -92,7 +141,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#071426_0%,#020813_38%,#01040b_100%)] pb-28 text-white">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#071426_0%,#020813_38%,#01040b_100%)] pb-10 text-white">
       <header className="sticky top-0 z-40 border-b border-yellow-500/25 bg-[#010611]/95 px-3 py-3 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -129,7 +178,38 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-3 pt-5 sm:px-5">
+      <section className="mx-auto max-w-6xl px-3 pt-3 sm:px-5">
+        <div className="flex items-stretch gap-2">
+          <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-yellow-400/30 bg-yellow-500/10">
+            <div className="flex h-full items-center">
+              <div className="shrink-0 border-r border-yellow-400/30 bg-yellow-400 px-3 py-2.5 text-xs font-black text-black">
+                📢 सूचना
+              </div>
+
+              <div className="min-w-0 flex-1 overflow-hidden px-3 py-2.5">
+                {announcementActive ? (
+                  <div className="dashboard-marquee whitespace-nowrap text-xs font-bold text-yellow-200 sm:text-sm">
+                    {announcement}
+                  </div>
+                ) : (
+                  <p className="truncate text-xs text-zinc-500">
+                    अभी कोई सूचना उपलब्ध नहीं है।
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <Link
+            href="/rules"
+            className="flex shrink-0 items-center justify-center rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 text-xs font-black text-yellow-300"
+          >
+            Rules
+          </Link>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-3 pt-3 sm:px-5">
         <div className="mb-5 rounded-2xl border border-white/10 bg-[#07101d] p-4">
           <p className="text-xs text-zinc-500">Welcome</p>
           <p className="mt-1 text-lg font-black text-white">
@@ -256,31 +336,48 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-[#010611]/95 backdrop-blur-xl">
-          <div className="mx-auto grid w-full max-w-md grid-cols-3 gap-2 p-3">
-            <Link
-              href="/deposit"
-              className="rounded-xl border border-green-500/30 bg-green-500/10 py-3 text-center text-xs font-black text-green-400"
-            >
-              Deposit
-            </Link>
+        <div className="mt-6 grid grid-cols-3 gap-2">
+          <Link
+            href="/deposit"
+            className="rounded-xl border border-green-500/30 bg-green-500/10 py-3 text-center text-xs font-black text-green-400"
+          >
+            Deposit
+          </Link>
 
-            <Link
-              href="/withdraw"
-              className="rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-center text-xs font-black text-red-400"
-            >
-              Withdraw
-            </Link>
+          <Link
+            href="/withdraw"
+            className="rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-center text-xs font-black text-red-400"
+          >
+            Withdraw
+          </Link>
 
-            <Link
-              href="/profile"
-              className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-3 text-center text-xs font-black text-yellow-400"
-            >
-              Profile
-            </Link>
-          </div>
+          <Link
+            href="/profile"
+            className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-3 text-center text-xs font-black text-yellow-400"
+          >
+            Profile
+          </Link>
         </div>
       </section>
+
+      <style jsx>{`
+        .dashboard-marquee {
+          display: inline-block;
+          min-width: 100%;
+          padding-left: 100%;
+          animation: dashboardMarquee 18s linear infinite;
+        }
+
+        @keyframes dashboardMarquee {
+          from {
+            transform: translateX(0);
+          }
+
+          to {
+            transform: translateX(-100%);
+          }
+        }
+      `}</style>
     </main>
   );
 }
