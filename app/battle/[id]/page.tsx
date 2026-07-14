@@ -234,13 +234,13 @@ export default function BattlePage() {
   function getWinningAmount() {
     const amount = Number(battle?.amount || 0);
     const totalPot = amount * 2;
-    const commission = Math.floor(totalPot * 0.1);
+    const commission = Math.floor(amount * 0.1);
 
     return totalPot - commission;
   }
 
   function getCommission() {
-    return Math.floor(Number(battle?.amount || 0) * 2 * 0.1);
+    return Math.floor(Number(battle?.amount || 0) * 0.1);
   }
 
   function maskPhone(value?: string | null) {
