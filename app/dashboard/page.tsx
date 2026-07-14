@@ -141,7 +141,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#071426_0%,#020813_38%,#01040b_100%)] pb-10 text-white">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#071426_0%,#020813_38%,#01040b_100%)] pb-28 text-white">
       <header className="sticky top-0 z-40 border-b border-yellow-500/25 bg-[#010611]/95 px-3 py-3 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -179,33 +179,24 @@ export default function DashboardPage() {
       </header>
 
       <section className="mx-auto max-w-6xl px-3 pt-3 sm:px-5">
-        <div className="flex items-stretch gap-2">
-          <div className="min-w-0 flex-1 overflow-hidden rounded-xl border border-yellow-400/30 bg-yellow-500/10">
-            <div className="flex h-full items-center">
-              <div className="shrink-0 border-r border-yellow-400/30 bg-yellow-400 px-3 py-2.5 text-xs font-black text-black">
-                📢 सूचना
-              </div>
+        <div className="overflow-hidden rounded-xl border border-yellow-400/30 bg-yellow-500/10">
+          <div className="flex items-center">
+            <div className="shrink-0 border-r border-yellow-400/30 bg-yellow-400 px-3 py-2.5 text-xs font-black text-black">
+              📢 सूचना
+            </div>
 
-              <div className="min-w-0 flex-1 overflow-hidden px-3 py-2.5">
-                {announcementActive ? (
-                  <div className="dashboard-marquee whitespace-nowrap text-xs font-bold text-yellow-200 sm:text-sm">
-                    {announcement}
-                  </div>
-                ) : (
-                  <p className="truncate text-xs text-zinc-500">
-                    अभी कोई सूचना उपलब्ध नहीं है।
-                  </p>
-                )}
-              </div>
+            <div className="min-w-0 flex-1 overflow-hidden px-3 py-2.5">
+              {announcementActive ? (
+                <div className="dashboard-marquee whitespace-nowrap text-xs font-bold text-yellow-200 sm:text-sm">
+                  {announcement}
+                </div>
+              ) : (
+                <p className="truncate text-xs text-zinc-500">
+                  अभी कोई सूचना उपलब्ध नहीं है।
+                </p>
+              )}
             </div>
           </div>
-
-          <Link
-            href="/rules"
-            className="flex shrink-0 items-center justify-center rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-4 text-xs font-black text-yellow-300"
-          >
-            Rules
-          </Link>
         </div>
       </section>
 
@@ -336,27 +327,36 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        <div className="mt-6 grid grid-cols-3 gap-2">
-          <Link
-            href="/deposit"
-            className="rounded-xl border border-green-500/30 bg-green-500/10 py-3 text-center text-xs font-black text-green-400"
-          >
-            Deposit
-          </Link>
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-[#010611]/95 backdrop-blur-xl">
+          <div className="mx-auto grid w-full max-w-md grid-cols-4 gap-2 p-3">
+            <Link
+              href="/deposit"
+              className="rounded-xl border border-green-500/30 bg-green-500/10 py-3 text-center text-[11px] font-black text-green-400"
+            >
+              Deposit
+            </Link>
 
-          <Link
-            href="/withdraw"
-            className="rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-center text-xs font-black text-red-400"
-          >
-            Withdraw
-          </Link>
+            <Link
+              href="/withdraw"
+              className="rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-center text-[11px] font-black text-red-400"
+            >
+              Withdraw
+            </Link>
 
-          <Link
-            href="/profile"
-            className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-3 text-center text-xs font-black text-yellow-400"
-          >
-            Profile
-          </Link>
+            <Link
+              href="/rules"
+              className="rounded-xl border border-blue-500/30 bg-blue-500/10 py-3 text-center text-[11px] font-black text-blue-400"
+            >
+              Rules
+            </Link>
+
+            <Link
+              href="/profile"
+              className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-3 text-center text-[11px] font-black text-yellow-400"
+            >
+              Profile
+            </Link>
+          </div>
         </div>
       </section>
 
