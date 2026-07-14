@@ -11,12 +11,17 @@ type PlayerProfile = {
   phone: string;
 };
 
+type GameFilter = "all" | "classic" | "ulta" | "teamup";
+
 export default function AdminBattlesPage() {
   const [battles, setBattles] = useState<any[]>([]);
-  const [playerProfiles, setPlayerProfiles] = useState<Record<string, PlayerProfile>>({});
+  const [playerProfiles, setPlayerProfiles] = useState<
+    Record<string, PlayerProfile>
+  >({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [gameFilter, setGameFilter] = useState<GameFilter>("all");
 
   useEffect(() => {
     loadBattles();
@@ -99,6 +104,15 @@ export default function AdminBattlesPage() {
     }
   }
 
+  function normalizeGameType(value?: string | null) {
+    const gameType = String(value || "classic").trim().toLowerCase();
+
+    if (gameType === "ulta") return "ulta";
+    if (gameType === "teamup") return "teamup";
+
+    return "classic";
+  }
+
   const stats = useMemo(
     () => ({
       all: battles.length,
@@ -108,22 +122,39 @@ export default function AdminBattlesPage() {
       ).length,
       completed: battles.filter((b) => b.status === "completed").length,
       cancelled: battles.filter((b) => b.status === "cancelled").length,
+      classic: battles.filter(
+        (b) => normalizeGameType(b.game_type) === "classic"
+      ).length,
+      ulta: battles.filter(
+        (b) => normalizeGameType(b.game_type) === "ulta"
+      ).length,
+      teamup: battles.filter(
+        (b) => normalizeGameType(b.game_type) === "teamup"
+      ).length,
     }),
     [battles]
   );
 
   const filteredBattles = useMemo(() => {
-    if (filter === "all") return battles;
+    let rows = battles;
 
     if (filter === "running") {
-      return battles.filter(
+      rows = rows.filter(
         (battle) =>
           battle.status === "matched" || battle.status === "running"
       );
+    } else if (filter !== "all") {
+      rows = rows.filter((battle) => battle.status === filter);
     }
 
-    return battles.filter((battle) => battle.status === filter);
-  }, [battles, filter]);
+    if (gameFilter !== "all") {
+      rows = rows.filter(
+        (battle) => normalizeGameType(battle.game_type) === gameFilter
+      );
+    }
+
+    return rows;
+  }, [battles, filter, gameFilter]);
 
   function maskPhone(value?: string | null) {
     const digits = String(value || "").replace(/\D/g, "");
@@ -165,6 +196,29 @@ export default function AdminBattlesPage() {
     return "border-zinc-700 bg-zinc-800 text-zinc-300";
   }
 
+  function gameTypeLabel(value?: string | null) {
+    const gameType = normalizeGameType(value);
+
+    if (gameType === "ulta") return "ULTA LUDO";
+    if (gameType === "teamup") return "TEAM UP";
+
+    return "CLASSIC";
+  }
+
+  function gameTypeClass(value?: string | null) {
+    const gameType = normalizeGameType(value);
+
+    if (gameType === "ulta") {
+      return "border-red-500/30 bg-red-500/10 text-red-300";
+    }
+
+    if (gameType === "teamup") {
+      return "border-yellow-500/30 bg-yellow-500/10 text-yellow-300";
+    }
+
+    return "border-blue-500/30 bg-blue-500/10 text-blue-300";
+  }
+
   function formatDate(dateValue: string) {
     if (!dateValue) return "No date";
 
@@ -185,6 +239,17 @@ export default function AdminBattlesPage() {
     { key: "running", label: "Running", count: stats.running },
     { key: "completed", label: "Completed", count: stats.completed },
     { key: "cancelled", label: "Cancel", count: stats.cancelled },
+  ];
+
+  const gameFilters: Array<{
+    key: GameFilter;
+    label: string;
+    count: number;
+  }> = [
+    { key: "all", label: "All Games", count: stats.all },
+    { key: "classic", label: "Classic", count: stats.classic },
+    { key: "ulta", label: "Ulta", count: stats.ulta },
+    { key: "teamup", label: "Team Up", count: stats.teamup },
   ];
 
   return (
@@ -218,28 +283,36 @@ export default function AdminBattlesPage() {
 
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
             <div className="rounded-2xl border border-zinc-800 bg-black/60 p-3 sm:p-4">
-              <p className="text-[10px] text-zinc-500 sm:text-xs">Total Battles</p>
+              <p className="text-[10px] text-zinc-500 sm:text-xs">
+                Total Battles
+              </p>
               <p className="mt-1 text-xl font-black text-yellow-400 sm:text-2xl">
                 {stats.all}
               </p>
             </div>
 
             <div className="rounded-2xl border border-green-500/20 bg-green-500/10 p-3 sm:p-4">
-              <p className="text-[10px] text-green-300 sm:text-xs">Open</p>
+              <p className="text-[10px] text-green-300 sm:text-xs">
+                Open
+              </p>
               <p className="mt-1 text-xl font-black text-green-400 sm:text-2xl">
                 {stats.open}
               </p>
             </div>
 
             <div className="rounded-2xl border border-blue-500/20 bg-blue-500/10 p-3 sm:p-4">
-              <p className="text-[10px] text-blue-300 sm:text-xs">Running</p>
+              <p className="text-[10px] text-blue-300 sm:text-xs">
+                Running
+              </p>
               <p className="mt-1 text-xl font-black text-blue-400 sm:text-2xl">
                 {stats.running}
               </p>
             </div>
 
             <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-3 sm:p-4">
-              <p className="text-[10px] text-red-300 sm:text-xs">Cancelled</p>
+              <p className="text-[10px] text-red-300 sm:text-xs">
+                Cancelled
+              </p>
               <p className="mt-1 text-xl font-black text-red-400 sm:text-2xl">
                 {stats.cancelled}
               </p>
@@ -247,7 +320,7 @@ export default function AdminBattlesPage() {
           </div>
         </section>
 
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
           {filters.map((item) => (
             <button
               key={item.key}
@@ -264,14 +337,41 @@ export default function AdminBattlesPage() {
           ))}
         </div>
 
+        <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+          {gameFilters.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setGameFilter(item.key)}
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black sm:px-4 sm:py-2 sm:text-sm ${
+                gameFilter === item.key
+                  ? item.key === "ulta"
+                    ? "border-red-500 bg-red-500 text-white"
+                    : item.key === "teamup"
+                      ? "border-yellow-500 bg-yellow-500 text-black"
+                      : item.key === "classic"
+                        ? "border-blue-500 bg-blue-500 text-white"
+                        : "border-white bg-white text-black"
+                  : "border-zinc-800 bg-zinc-950 text-zinc-400"
+              }`}
+            >
+              {item.label} ({item.count})
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-center">
             <div className="mx-auto mb-3 h-9 w-9 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
-            <p className="text-sm font-bold text-zinc-300">Loading battles...</p>
+            <p className="text-sm font-bold text-zinc-300">
+              Loading battles...
+            </p>
           </div>
         ) : filteredBattles.length === 0 ? (
           <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 text-center">
-            <p className="font-black text-zinc-300">No battles found.</p>
+            <p className="font-black text-zinc-300">
+              No battles found.
+            </p>
             <p className="mt-1 text-sm text-zinc-500">
               Is filter me koi battle nahi hai.
             </p>
@@ -307,12 +407,25 @@ export default function AdminBattlesPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="text-[10px] font-bold text-zinc-500 sm:text-xs">
-                        Battle #{battle.id}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[10px] font-bold text-zinc-500 sm:text-xs">
+                          Battle #{battle.id}
+                        </p>
+
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[9px] font-black ${gameTypeClass(
+                            battle.game_type
+                          )}`}
+                        >
+                          {gameTypeLabel(battle.game_type)}
+                        </span>
+                      </div>
 
                       <h2 className="mt-0.5 text-2xl font-black text-yellow-400 sm:text-3xl">
-                        ₹{Number(battle.amount || 0).toLocaleString("en-IN")}
+                        ₹
+                        {Number(battle.amount || 0).toLocaleString(
+                          "en-IN"
+                        )}
                       </h2>
 
                       <p className="mt-0.5 text-[10px] text-zinc-500 sm:text-xs">
@@ -351,6 +464,22 @@ export default function AdminBattlesPage() {
 
                   <div className="mt-2.5 rounded-2xl border border-zinc-800 bg-black p-3">
                     <div className="grid grid-cols-[90px_minmax(0,1fr)] items-center gap-3 text-xs sm:text-sm">
+                      <span className="text-zinc-500">Game Mode</span>
+                      <span
+                        className={`truncate text-right font-black ${
+                          normalizeGameType(battle.game_type) === "ulta"
+                            ? "text-red-300"
+                            : normalizeGameType(battle.game_type) ===
+                                "teamup"
+                              ? "text-yellow-300"
+                              : "text-blue-300"
+                        }`}
+                      >
+                        {gameTypeLabel(battle.game_type)}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-[90px_minmax(0,1fr)] items-center gap-3 text-xs sm:text-sm">
                       <span className="text-zinc-500">Room Code</span>
                       <span className="truncate text-right font-black text-yellow-300">
                         {battle.room_code || "Not added"}
@@ -364,6 +493,15 @@ export default function AdminBattlesPage() {
                       </span>
                     </div>
                   </div>
+
+                  {normalizeGameType(battle.game_type) === "ulta" && (
+                    <div className="mt-2.5 rounded-2xl border border-red-500/20 bg-red-500/10 p-3">
+                      <p className="text-[11px] font-bold leading-5 text-red-200">
+                        Ulta Ludo: Normal Ludo me haarne wala player winner
+                        maana jayega.
+                      </p>
+                    </div>
+                  )}
 
                   <Link
                     href={`/admin/battles/${battle.id}`}

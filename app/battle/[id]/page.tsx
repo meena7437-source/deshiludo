@@ -557,6 +557,20 @@ export default function BattlePage() {
     return value;
   }
 
+  function getGameType() {
+    return battle?.game_type === "ulta" ? "ulta" : "classic";
+  }
+
+  function getGameTypeLabel() {
+    return getGameType() === "ulta" ? "Ulta Ludo" : "Ludo Classic";
+  }
+
+  function gameTypeClass() {
+    return getGameType() === "ulta"
+      ? "border-red-500/30 bg-red-500/15 text-red-300"
+      : "border-blue-500/30 bg-blue-500/15 text-blue-300";
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#07070b] p-4 text-white">
@@ -604,14 +618,55 @@ export default function BattlePage() {
               </h1>
             </div>
 
-            <span
-              className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${statusClass(
-                battle.status,
-              )}`}
-            >
-              {battle.status}
-            </span>
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <span
+                className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${gameTypeClass()}`}
+              >
+                {getGameType() === "ulta" ? "🔄 ULTA" : "🎮 CLASSIC"}
+              </span>
+
+              <span
+                className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ${statusClass(
+                  battle.status,
+                )}`}
+              >
+                {battle.status}
+              </span>
+            </div>
           </div>
+
+          <div className="mt-3 rounded-xl border border-zinc-800 bg-black/50 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[9px] text-zinc-500">Game Mode</p>
+                <p
+                  className={`mt-0.5 text-sm font-black ${
+                    getGameType() === "ulta"
+                      ? "text-red-400"
+                      : "text-blue-400"
+                  }`}
+                >
+                  {getGameTypeLabel()}
+                </p>
+              </div>
+
+              <span className="text-2xl">
+                {getGameType() === "ulta" ? "🔄" : "🎮"}
+              </span>
+            </div>
+          </div>
+
+          {getGameType() === "ulta" && (
+            <div className="mt-2.5 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+              <p className="text-xs font-black text-red-300">
+                Ulta Ludo Rule
+              </p>
+              <p className="mt-1 text-[10px] leading-5 text-red-100/80">
+                Normal Ludo me jo player lose karega, Ulta Ludo me wahi winner
+                maana jayega. Result me winner ko WIN hi dikhaya jayega.
+              </p>
+            </div>
+          )}
 
           <div className="mt-3 grid grid-cols-3 gap-1.5">
             <div className="rounded-xl border border-zinc-800 bg-black/50 p-2.5">
