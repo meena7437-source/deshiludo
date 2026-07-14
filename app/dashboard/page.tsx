@@ -92,7 +92,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#071426_0%,#020813_38%,#01040b_100%)] pb-10 text-white">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#071426_0%,#020813_38%,#01040b_100%)] pb-28 text-white">
       <header className="sticky top-0 z-40 border-b border-yellow-500/25 bg-[#010611]/95 px-3 py-3 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -256,27 +256,29 @@ export default function DashboardPage() {
           </Link>
         </div>
 
-        <div className="mt-6 grid grid-cols-3 gap-2">
-          <Link
-            href="/deposit"
-            className="rounded-xl border border-green-500/30 bg-green-500/10 py-3 text-center text-xs font-black text-green-400"
-          >
-            Deposit
-          </Link>
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-800 bg-[#010611]/95 backdrop-blur-xl">
+          <div className="mx-auto grid w-full max-w-md grid-cols-3 gap-2 p-3">
+            <Link
+              href="/deposit"
+              className="rounded-xl border border-green-500/30 bg-green-500/10 py-3 text-center text-xs font-black text-green-400"
+            >
+              Deposit
+            </Link>
 
-          <Link
-            href="/withdraw"
-            className="rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-center text-xs font-black text-red-400"
-          >
-            Withdraw
-          </Link>
+            <Link
+              href="/withdraw"
+              className="rounded-xl border border-red-500/30 bg-red-500/10 py-3 text-center text-xs font-black text-red-400"
+            >
+              Withdraw
+            </Link>
 
-          <Link
-            href="/profile"
-            className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-3 text-center text-xs font-black text-yellow-400"
-          >
-            Profile
-          </Link>
+            <Link
+              href="/profile"
+              className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 py-3 text-center text-xs font-black text-yellow-400"
+            >
+              Profile
+            </Link>
+          </div>
         </div>
       </section>
     </main>

@@ -32,23 +32,24 @@ const rules = [
     ],
   },
   {
-    title: "5. Battle Rules",
+    title: "5. Battle Rules और Commission",
     content: [
       "न्यूनतम Battle Amount ₹100 है।",
       "Battle Amount केवल ₹50 के गुणकों में होगी।",
       "एक Battle में केवल संबंधित दोनों खिलाड़ी ही भाग ले सकते हैं।",
+      "₹300 तक की Battle पर 10% Platform Commission लिया जाएगा।",
+      "₹300 से अधिक की Battle पर 5% Platform Commission लिया जाएगा।",
+      "Commission Battle Amount पर लागू होगा और शेष राशि विजेता के Winning Balance में जोड़ी जाएगी।",
     ],
   },
   {
-},
-{
-  title: "6. Battle Join करने से पहले शर्तें पढ़ें",
-  content: [
-    "Battle Join करने से पहले Creator द्वारा लिखी गई सभी शर्तों को ध्यानपूर्वक पढ़ें।",
-    "यदि आप उन सभी शर्तों का पालन कर सकते हैं, तभी Battle Join करें।",
-    "अन्यथा Battle Cancel करके किसी अन्य उपयुक्त Player के साथ नई Battle शुरू करें।",
-  ],
-},
+    title: "6. Battle Join करने से पहले शर्तें पढ़ें",
+    content: [
+      "Battle Join करने से पहले Creator द्वारा लिखी गई सभी शर्तों को ध्यानपूर्वक पढ़ें।",
+      "यदि आप उन सभी शर्तों का पालन कर सकते हैं, तभी Battle Join करें।",
+      "अन्यथा Battle Cancel करके किसी अन्य उपयुक्त Player के साथ नई Battle शुरू करें।",
+    ],
+  },
   {
     title: "7. Result और Screenshot",
     content: [
@@ -174,7 +175,7 @@ export default function RulesPage() {
               </h2>
 
               <div className="space-y-1.5">
-{(rule.content ?? []).map((line, index) => (
+                {rule.content.map((line, index) => (
                   <div key={index} className="flex items-start gap-2">
                     <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-yellow-400" />
 
