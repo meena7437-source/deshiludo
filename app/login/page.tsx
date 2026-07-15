@@ -7,15 +7,22 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import {
   ConfirmationResult,
+  onAuthStateChanged,
   RecaptchaVerifier,
   signInWithPhoneNumber,
 } from "firebase/auth";
-import { auth } from "../../lib/firebase";
+import {
+  auth,
+  authPersistenceReady,
+} from "../../lib/firebase";
 import { supabase } from "../../lib/supabase";
 
 function makeReferralCode(phoneNumber: string) {
   const last4 = phoneNumber.slice(-4);
-  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const random = Math.random()
+    .toString(36)
+    .substring(2, 6)
+    .toUpperCase();
 
   return `DL${last4}${random}`;
 }
@@ -30,6 +37,7 @@ function getErrorMessage(err: unknown) {
 
 export default function LoginPage() {
   const router = useRouter();
+
   const recaptchaRef = useRef<RecaptchaVerifier | null>(null);
 
   const [phone, setPhone] = useState("");
@@ -41,8 +49,61 @@ export default function LoginPage() {
 
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Existing Login Session
+  |--------------------------------------------------------------------------
+  | User पहले से login है तो OTP page दिखाने के बजाय dashboard खोलेगा।
+  |--------------------------------------------------------------------------
+  */
 
   useEffect(() => {
+    let active = true;
+
+    async function checkExistingLogin() {
+      await authPersistenceReady;
+
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (!active) return;
+
+        if (user) {
+          router.replace("/dashboard");
+          router.refresh();
+          return;
+        }
+
+        setCheckingSession(false);
+      });
+
+      return unsubscribe;
+    }
+
+    let unsubscribe: (() => void) | undefined;
+
+    checkExistingLogin().then((result) => {
+      unsubscribe = result;
+    });
+
+    return () => {
+      active = false;
+
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [router]);
+
+  /*
+  |--------------------------------------------------------------------------
+  | Firebase Recaptcha
+  |--------------------------------------------------------------------------
+  */
+
+  useEffect(() => {
+    if (checkingSession) return;
+
     if (!recaptchaRef.current) {
       recaptchaRef.current = new RecaptchaVerifier(
         auth,
@@ -61,23 +122,59 @@ export default function LoginPage() {
       recaptchaRef.current?.clear();
       recaptchaRef.current = null;
     };
-  }, []);
+  }, [checkingSession]);
+
+  async function resetRecaptcha() {
+    try {
+      recaptchaRef.current?.clear();
+    } catch (error) {
+      console.error("Recaptcha clear error:", error);
+    }
+
+    recaptchaRef.current = null;
+
+    const container = document.getElementById(
+      "recaptcha-container"
+    );
+
+    if (container) {
+      container.innerHTML = "";
+    }
+
+    recaptchaRef.current = new RecaptchaVerifier(
+      auth,
+      "recaptcha-container",
+      {
+        size: "normal",
+      }
+    );
+
+    await recaptchaRef.current.render();
+  }
 
   async function sendOTP() {
     try {
-      const cleanPhone = phone.trim();
+      const cleanPhone = phone
+        .trim()
+        .replace(/\D/g, "");
 
       if (cleanPhone.length !== 10) {
         toast.error("10 digit mobile number enter karo");
         return;
       }
 
+      setSending(true);
+
+      await authPersistenceReady;
+
+      if (!recaptchaRef.current) {
+        await resetRecaptcha();
+      }
+
       if (!recaptchaRef.current) {
         toast.error("Captcha load nahi hua, page refresh karo");
         return;
       }
-
-      setSending(true);
 
       const result = await signInWithPhoneNumber(
         auth,
@@ -86,10 +183,22 @@ export default function LoginPage() {
       );
 
       setConfirmation(result);
+      setOtp("");
+
       toast.success("OTP sent successfully");
     } catch (err: unknown) {
-      console.error(err);
+      console.error("OTP send error:", err);
+
       toast.error(getErrorMessage(err));
+
+      try {
+        await resetRecaptcha();
+      } catch (resetError) {
+        console.error(
+          "Recaptcha reset error:",
+          resetError
+        );
+      }
     } finally {
       setSending(false);
     }
@@ -109,14 +218,25 @@ export default function LoginPage() {
 
       setVerifying(true);
 
-      const userCredential = await confirmation.confirm(otp);
+      await authPersistenceReady;
+
+      const userCredential =
+        await confirmation.confirm(otp);
 
       const uid = userCredential.user.uid;
-      const mobile = userCredential.user.phoneNumber || `+91${phone}`;
 
-      const { data: existingUser, error: userCheckError } = await supabase
+      const mobile =
+        userCredential.user.phoneNumber ||
+        `+91${phone}`;
+
+      const {
+        data: existingUser,
+        error: userCheckError,
+      } = await supabase
         .from("users")
-        .select("id, firebase_uid, referral_code, referred_by")
+        .select(
+          "id,firebase_uid,referral_code,referred_by"
+        )
         .eq("firebase_uid", uid)
         .maybeSingle();
 
@@ -125,18 +245,26 @@ export default function LoginPage() {
         return;
       }
 
-      let finalReferralCode = existingUser?.referral_code;
+      let finalReferralCode =
+        existingUser?.referral_code;
 
       if (!finalReferralCode) {
-        finalReferralCode = makeReferralCode(mobile);
+        finalReferralCode =
+          makeReferralCode(mobile);
       }
 
-      let finalReferredBy = existingUser?.referred_by || null;
+      let finalReferredBy =
+        existingUser?.referred_by || null;
 
       if (!existingUser && referralCode.trim()) {
-        const enteredCode = referralCode.trim().toUpperCase();
+        const enteredCode = referralCode
+          .trim()
+          .toUpperCase();
 
-        const { data: refUser, error: refError } = await supabase
+        const {
+          data: refUser,
+          error: refError,
+        } = await supabase
           .from("users")
           .select("referral_code")
           .eq("referral_code", enteredCode)
@@ -155,17 +283,18 @@ export default function LoginPage() {
         finalReferredBy = enteredCode;
       }
 
-      const { error: saveUserError } = await supabase.from("users").upsert(
-        {
-          firebase_uid: uid,
-          phone: mobile,
-          referral_code: finalReferralCode,
-          referred_by: finalReferredBy,
-        },
-        {
-          onConflict: "firebase_uid",
-        }
-      );
+      const { error: saveUserError } =
+        await supabase.from("users").upsert(
+          {
+            firebase_uid: uid,
+            phone: mobile,
+            referral_code: finalReferralCode,
+            referred_by: finalReferredBy,
+          },
+          {
+            onConflict: "firebase_uid",
+          }
+        );
 
       if (saveUserError) {
         toast.error(saveUserError.message);
@@ -173,14 +302,29 @@ export default function LoginPage() {
       }
 
       toast.success("Login successful");
-      router.push("/dashboard");
+
+      router.replace("/dashboard");
       router.refresh();
     } catch (err: unknown) {
-      console.error(err);
+      console.error("OTP verify error:", err);
       toast.error(getErrorMessage(err));
     } finally {
       setVerifying(false);
     }
+  }
+
+  if (checkingSession) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#050510] text-white">
+        <div className="text-center">
+          <div className="mx-auto h-11 w-11 animate-spin rounded-full border-4 border-zinc-800 border-t-yellow-400" />
+
+          <p className="mt-4 text-sm font-black text-yellow-400">
+            Login check हो रहा है...
+          </p>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -230,11 +374,16 @@ export default function LoginPage() {
                 autoComplete="tel"
                 placeholder="10 digit mobile number"
                 value={phone}
-                onChange={(e) =>
-                  setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                onChange={(event) =>
+                  setPhone(
+                    event.target.value
+                      .replace(/\D/g, "")
+                      .slice(0, 10)
+                  )
                 }
                 maxLength={10}
-                className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-white outline-none placeholder:text-zinc-600"
+                disabled={Boolean(confirmation)}
+                className="min-w-0 flex-1 bg-transparent px-3 py-3 text-sm text-white outline-none placeholder:text-zinc-600 disabled:opacity-50"
               />
             </div>
           </div>
@@ -242,6 +391,7 @@ export default function LoginPage() {
           <div>
             <label className="mb-1.5 block text-[11px] font-bold text-zinc-400">
               Referral Code
+
               <span className="ml-1 font-medium text-zinc-600">
                 Optional
               </span>
@@ -252,9 +402,9 @@ export default function LoginPage() {
               autoCapitalize="characters"
               placeholder="Referral code enter करें"
               value={referralCode}
-              onChange={(e) =>
+              onChange={(event) =>
                 setReferralCode(
-                  e.target.value
+                  event.target.value
                     .replace(/\s/g, "")
                     .toUpperCase()
                     .slice(0, 20)
@@ -275,7 +425,10 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={sendOTP}
-            disabled={sending || phone.length !== 10}
+            disabled={
+              sending ||
+              phone.length !== 10
+            }
             className="w-full rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-black shadow-[0_8px_25px_rgba(250,204,21,0.16)] transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {sending
@@ -297,8 +450,12 @@ export default function LoginPage() {
                 autoComplete="one-time-code"
                 placeholder="6 digit OTP enter करें"
                 value={otp}
-                onChange={(e) =>
-                  setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))
+                onChange={(event) =>
+                  setOtp(
+                    event.target.value
+                      .replace(/\D/g, "")
+                      .slice(0, 6)
+                  )
                 }
                 maxLength={6}
                 className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-center text-lg font-black tracking-[0.35em] text-white outline-none placeholder:text-xs placeholder:font-medium placeholder:tracking-normal placeholder:text-zinc-600 focus:border-green-400/40"
@@ -307,10 +464,15 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={verifyOTP}
-                disabled={verifying || otp.length !== 6}
+                disabled={
+                  verifying ||
+                  otp.length !== 6
+                }
                 className="mt-3 w-full rounded-xl bg-green-500 px-4 py-3 text-sm font-black text-white transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {verifying ? "Verify हो रहा है..." : "Verify OTP"}
+                {verifying
+                  ? "Verify हो रहा है..."
+                  : "Verify OTP"}
               </button>
             </div>
           )}
