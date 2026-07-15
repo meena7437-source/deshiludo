@@ -1164,9 +1164,6 @@ export default function ProfilePage() {
               {phone || "User"}
             </p>
 
-            <p className="mt-1 truncate text-[9px] text-zinc-600">
-              UID: {uid}
-            </p>
           </section>
 
           <section className="mb-3 rounded-2xl border border-green-500/30 bg-gradient-to-br from-green-500/15 via-zinc-950 to-black p-3">
