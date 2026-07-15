@@ -177,6 +177,14 @@ export default function ProfilePage() {
   }
 
   async function saveBasicProfile() {
+    const profileLocked =
+      Boolean(savedName.trim()) && Boolean(savedUsername.trim());
+
+    if (profileLocked) {
+      toast.error("Name aur username pehle se locked hain");
+      return;
+    }
+
     if (!uid) {
       toast.error("Login session missing");
       return;
@@ -995,9 +1003,13 @@ export default function ProfilePage() {
     return null;
   }
 
+  const profileLocked =
+    Boolean(savedName.trim()) && Boolean(savedUsername.trim());
+
   const profileChanged =
-    name.trim().replace(/\s+/g, " ") !== savedName ||
-    username.trim().toLowerCase() !== savedUsername;
+    !profileLocked &&
+    (name.trim().replace(/\s+/g, " ") !== savedName ||
+      username.trim().toLowerCase() !== savedUsername);
 
   if (loading) {
     return (
@@ -1077,7 +1089,7 @@ export default function ProfilePage() {
               maxLength={50}
               onChange={(event) => setName(event.target.value)}
               placeholder="Apna naam daalo"
-              disabled={savingProfile}
+              disabled={savingProfile || profileLocked}
               className="mb-2.5 mt-1 w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-60"
             />
 
@@ -1102,7 +1114,7 @@ export default function ProfilePage() {
                   )
                 }
                 placeholder="sher123"
-                disabled={savingProfile}
+                disabled={savingProfile || profileLocked}
                 className="w-full rounded-xl border border-zinc-800 bg-black py-2.5 pl-7 pr-3 text-sm text-white outline-none focus:border-yellow-400 disabled:opacity-60"
               />
             </div>
@@ -1111,16 +1123,36 @@ export default function ProfilePage() {
               4–20 characters • small letters, numbers aur underscore
             </p>
 
-            <button
-              type="button"
-              onClick={saveBasicProfile}
-              disabled={savingProfile || !profileChanged}
-              className="mt-3 w-full rounded-xl bg-yellow-400 py-2.5 text-sm font-black text-black disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
-            >
-              {savingProfile
-                ? "Saving..."
-                : "Save Name & Username"}
-            </button>
+            {profileLocked ? (
+              <div className="mt-3 rounded-xl border border-green-500/30 bg-green-500/10 p-3">
+                <p className="text-xs font-black text-green-400">
+                  🔒 Name aur username locked hain
+                </p>
+                <p className="mt-1 text-[10px] leading-4 text-zinc-400">
+                  Inhe user dobara change nahi kar sakta.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="mt-3 rounded-xl border border-yellow-500/20 bg-yellow-500/10 p-3">
+                  <p className="text-[10px] font-bold leading-4 text-yellow-300">
+                    Name aur username dono ek saath save honge. Save hone ke
+                    baad dono permanently lock ho jayenge.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={saveBasicProfile}
+                  disabled={savingProfile || !profileChanged}
+                  className="mt-3 w-full rounded-xl bg-yellow-400 py-2.5 text-sm font-black text-black disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-500"
+                >
+                  {savingProfile
+                    ? "Saving..."
+                    : "Save & Permanently Lock"}
+                </button>
+              </>
+            )}
           </section>
 
           <section className="mb-3 rounded-xl border border-zinc-800 bg-zinc-950 p-3">
