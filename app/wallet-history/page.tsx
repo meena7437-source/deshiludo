@@ -1,8 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { onAuthStateChanged } from "firebase/auth";
@@ -11,6 +11,7 @@ import { supabase } from "../../lib/supabase";
 
 type WalletTx = {
   id: number;
+  uid: string;
   type: string;
   title: string;
   amount: number;
@@ -20,24 +21,129 @@ type WalletTx = {
   created_at: string;
 };
 
+type WalletHistoryResponse = {
+  uid?: string;
+  history?: WalletTx[];
+  error?: string;
+  details?: string;
+};
+
 export default function WalletHistoryPage() {
   const router = useRouter();
+  const mountedRef = useRef(false);
 
   const [uid, setUid] = useState("");
   const [history, setHistory] = useState<WalletTx[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  const loadHistory = useCallback(
+    async (showRefreshLoader = false) => {
+      const user = auth.currentUser;
+
+      if (!user) {
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+
+        router.replace("/login");
+        return;
+      }
+
+      try {
+        if (mountedRef.current) {
+          if (showRefreshLoader) {
+            setRefreshing(true);
+          }
+
+          setLoadError("");
+        }
+
+        const idToken = await user.getIdToken();
+
+        const response = await fetch("/api/wallet-history", {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+          },
+          cache: "no-store",
+        });
+
+        const contentType = response.headers.get("content-type") || "";
+        const responseText = await response.text();
+
+        if (!contentType.includes("application/json")) {
+          throw new Error(
+            `Wallet History API ne JSON nahi bheja. Status ${response.status}`
+          );
+        }
+
+        const result = JSON.parse(
+          responseText
+        ) as WalletHistoryResponse;
+
+        if (!response.ok) {
+          throw new Error(
+            [result.error, result.details]
+              .filter(Boolean)
+              .join(" | ") || "Wallet history load nahi hui."
+          );
+        }
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setUid(result.uid || user.uid);
+        setHistory(result.history || []);
+        setLoadError("");
+      } catch (error: unknown) {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown wallet history error";
+
+        console.error("Wallet history load error:", error);
+
+        setHistory([]);
+        setLoadError(message);
+        toast.error("Wallet history load nahi hui");
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [router]
+  );
 
   useEffect(() => {
-    let historyChannel: any = null;
+    mountedRef.current = true;
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let historyChannel:
+      | ReturnType<typeof supabase.channel>
+      | null = null;
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!mountedRef.current) {
+        return;
+      }
+
       if (!user) {
+        setLoading(false);
         router.replace("/login");
         return;
       }
 
       setUid(user.uid);
-      await loadHistory(user.uid);
+
+      void loadHistory();
 
       historyChannel = supabase
         .channel(`wallet-history-${user.uid}`)
@@ -49,42 +155,24 @@ export default function WalletHistoryPage() {
             table: "wallet_history",
             filter: `uid=eq.${user.uid}`,
           },
-          async () => {
-            await loadHistory(user.uid);
+          () => {
+            if (mountedRef.current) {
+              void loadHistory();
+            }
           }
         )
         .subscribe();
-
-      setLoading(false);
     });
 
     return () => {
+      mountedRef.current = false;
       unsubscribe();
 
       if (historyChannel) {
-        supabase.removeChannel(historyChannel);
+        void supabase.removeChannel(historyChannel);
       }
     };
-  }, [router]);
-
-  async function loadHistory(userId: string) {
-    const { data, error } = await supabase
-      .from("wallet_history")
-      .select(
-        "id,type,title,amount,direction,balance_type,reference_id,created_at"
-      )
-      .eq("uid", userId)
-      .order("created_at", { ascending: false })
-      .limit(100);
-
-    if (error) {
-      console.error("Wallet history load error:", error);
-      toast.error("Wallet history load nahi hui");
-      return;
-    }
-
-    setHistory((data || []) as WalletTx[]);
-  }
+  }, [loadHistory, router]);
 
   function cleanTitle(tx: WalletTx) {
     if (tx.type === "battle_cancel_refund") return "Cancel Refund";
@@ -95,7 +183,9 @@ export default function WalletHistoryPage() {
     if (tx.type === "first_deposit_bonus") return "First Deposit Bonus";
     if (tx.type === "referral_bonus") return "Referral Bonus";
     if (tx.type === "withdraw_request") return "Withdraw";
-    if (tx.type === "withdraw_refund") return "Withdraw Reject Refund";
+    if (tx.type === "withdraw_refund") {
+      return "Withdraw Reject Refund";
+    }
 
     return tx.title || tx.type || "Wallet Entry";
   }
@@ -103,34 +193,48 @@ export default function WalletHistoryPage() {
   function txStyle(tx: WalletTx) {
     if (tx.direction === "minus") {
       return {
-        dotClass: "bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.6)]",
+        dotClass:
+          "bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.6)]",
         amountClass: "text-red-400",
         borderClass: "border-red-500/25",
       };
     }
 
-    if (tx.direction === "zero" || Number(tx.amount || 0) === 0) {
+    if (
+      tx.direction === "zero" ||
+      Number(tx.amount || 0) === 0
+    ) {
       return {
-        dotClass: "bg-zinc-400 shadow-[0_0_10px_rgba(161,161,170,0.5)]",
+        dotClass:
+          "bg-zinc-400 shadow-[0_0_10px_rgba(161,161,170,0.5)]",
         amountClass: "text-zinc-300",
         borderClass: "border-zinc-700",
       };
     }
 
     return {
-      dotClass: "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]",
+      dotClass:
+        "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]",
       amountClass: "text-emerald-400",
       borderClass: "border-emerald-500/25",
     };
   }
 
-  function formatAmount(amount: number, direction: string) {
-    const formattedAmount = Math.abs(Number(amount || 0)).toLocaleString(
-      "en-IN"
-    );
+  function formatAmount(
+    amount: number,
+    direction: string
+  ) {
+    const formattedAmount = Math.abs(
+      Number(amount || 0)
+    ).toLocaleString("en-IN");
 
-    if (direction === "plus") return `+₹${formattedAmount}`;
-    if (direction === "minus") return `-₹${formattedAmount}`;
+    if (direction === "plus") {
+      return `+₹${formattedAmount}`;
+    }
+
+    if (direction === "minus") {
+      return `-₹${formattedAmount}`;
+    }
 
     return "₹0";
   }
@@ -152,6 +256,7 @@ export default function WalletHistoryPage() {
       <main className="flex min-h-screen items-center justify-center bg-black text-white">
         <div className="text-center">
           <div className="mx-auto mb-3 h-9 w-9 animate-spin rounded-full border-4 border-yellow-400 border-t-transparent" />
+
           <p className="text-sm font-bold text-yellow-400">
             Loading Wallet History...
           </p>
@@ -178,6 +283,7 @@ export default function WalletHistoryPage() {
               <h1 className="text-xl font-black leading-tight text-yellow-400">
                 Wallet History
               </h1>
+
               <p className="mt-0.5 truncate text-[9px] text-zinc-600">
                 UID: {uid}
               </p>
@@ -192,16 +298,40 @@ export default function WalletHistoryPage() {
           </Link>
         </header>
 
-        {history.length === 0 ? (
+        {loadError && (
+          <div className="mb-3 rounded-2xl border border-red-500/30 bg-red-950/30 p-4">
+            <p className="text-sm font-black text-red-400">
+              Wallet History Error
+            </p>
+
+            <p className="mt-2 break-all text-xs text-red-300">
+              {loadError}
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                void loadHistory(true);
+              }}
+              disabled={refreshing}
+              className="mt-3 rounded-lg bg-red-500 px-4 py-2 text-xs font-black text-white disabled:opacity-50"
+            >
+              {refreshing ? "Loading..." : "Try Again"}
+            </button>
+          </div>
+        )}
+
+        {!loadError && history.length === 0 && (
           <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-5 text-center">
             <p className="text-sm text-zinc-400">
               Abhi koi wallet history nahi hai.
             </p>
           </div>
-        ) : (
+        )}
+
+        {!loadError && history.length > 0 && (
           <div className="space-y-2">
             {history.map((tx) => {
-              const amount = Number(tx.amount || 0);
               const style = txStyle(tx);
 
               return (
@@ -238,7 +368,10 @@ export default function WalletHistoryPage() {
                     <p
                       className={`shrink-0 pt-0.5 text-[15px] font-black leading-5 ${style.amountClass}`}
                     >
-                      {formatAmount(amount, tx.direction)}
+                      {formatAmount(
+                        tx.amount,
+                        tx.direction
+                      )}
                     </p>
                   </div>
                 </article>
