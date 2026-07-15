@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { getFirebaseAdminAuth } from "../../../lib/firebase-admin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+type FirebaseLookupResponse = {
+  users?: Array<{
+    localId?: string;
+  }>;
+  error?: {
+    message?: string;
+  };
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,7 +24,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const idToken = authorization.substring(7).trim();
+    const idToken = authorization.slice(7).trim();
 
     if (!idToken) {
       return NextResponse.json(
@@ -25,8 +33,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const firebaseWebApiKey = process.env.FIREBASE_WEB_API_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    if (!firebaseWebApiKey) {
+      throw new Error("FIREBASE_WEB_API_KEY missing hai.");
+    }
 
     if (!supabaseUrl) {
       throw new Error("NEXT_PUBLIC_SUPABASE_URL missing hai.");
@@ -36,17 +49,59 @@ export async function GET(request: NextRequest) {
       throw new Error("SUPABASE_SERVICE_ROLE_KEY missing hai.");
     }
 
-    const firebaseAdminAuth = getFirebaseAdminAuth();
-    const decodedToken = await firebaseAdminAuth.verifyIdToken(idToken);
-    const verifiedUid = decodedToken.uid;
+    const firebaseResponse = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(
+        firebaseWebApiKey
+      )}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          idToken,
+        }),
+        cache: "no-store",
+      }
+    );
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    });
+    const firebaseResult =
+      (await firebaseResponse.json()) as FirebaseLookupResponse;
+
+    if (!firebaseResponse.ok) {
+      return NextResponse.json(
+        {
+          error: "Firebase login token verify nahi hua.",
+          details:
+            firebaseResult.error?.message ||
+            `Firebase verification failed: ${firebaseResponse.status}`,
+        },
+        { status: 401 }
+      );
+    }
+
+    const verifiedUid = firebaseResult.users?.[0]?.localId;
+
+    if (!verifiedUid) {
+      return NextResponse.json(
+        {
+          error: "Verified Firebase UID nahi mili.",
+        },
+        { status: 401 }
+      );
+    }
+
+    const supabaseAdmin = createClient(
+      supabaseUrl,
+      serviceRoleKey,
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      }
+    );
 
     const { data, error } = await supabaseAdmin
       .from("wallet_history")
